@@ -1,5 +1,7 @@
 #include "VirtualMachine.h"
 #include "Machine.h"
+#include <unistd.h>
+#include <iostream>
 /*#define VM_THREAD_STATE_DEAD 	((TVMTreadState) 0x00)
 #define VM_THREAD_STATE_RUNNING ((TVMTreadState) 0x01)
 #define VM_THREAD_STATE_READY 	((TVMTreadState) 0x02)
@@ -16,11 +18,44 @@
 */
 
 extern "C"{
-TMVSatus VMStart(int tickms, int machinetickms, int argc, char *argv[])
+    TVMMainEntry VMLoadModule(const char *module);
+
+    TVMStatus VMStart(int tickms, int machinetickms, int argc, char *argv[])
 	{
+        //dyfine TVMMain as a type of function pointer that takes in int argc and char *argv[]
 		typedef void (*TVMMain)(int argc, char *argv[]);
 		
+        //declare it
 		TVMMain VMMain;
-		VMMain = VMLoadModule(argv[1]);	
-	}	
+
+        //load the module
+		VMMain = VMLoadModule(argv[0]);	
+
+        //if valid address
+        if(VMMain != NULL)
+        {
+            std::cout<<"not NULL"<<std::endl;
+            VMMain(argc, argv);
+            return VM_STATUS_SUCCESS;
+        }
+        else
+        {
+            std::cout<<"NULL"<<std::endl;
+            return VM_STATUS_FAILURE;
+        }
+
+	}
+
+
+    TVMStatus VMFileWrite(int filedescriptor, void *data, int *length)
+    {
+        if(write(filedescriptor, data, *length) < 0) 
+        {
+            return VM_STATUS_FAILURE;
+        }
+        else
+        {
+            return VM_STATUS_SUCCESS;
+        }
+    }    
 }
