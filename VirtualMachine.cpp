@@ -45,16 +45,22 @@ extern "C"{
 
     TVMStatus VMThreadSleep(TVMTick tick)
     {
-        
+
     }
 
 
     TVMStatus VMFileWrite(int filedescriptor, void *data, int *length)
     {
-        if(write(filedescriptor, data, *length) < 0) 
+        if(data == NULL || length == NULL)
+        {
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+        else if(write(filedescriptor, data, *length) < 0) 
         {
             return VM_STATUS_FAILURE;
         }
+
         else
         {
             return VM_STATUS_SUCCESS;
