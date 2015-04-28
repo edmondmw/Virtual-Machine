@@ -1,7 +1,6 @@
 #include "VirtualMachine.h"
 #include "Machine.h"
 #include <unistd.h>
-#include <iostream>
 /*#define VM_THREAD_STATE_DEAD 	((TVMTreadState) 0x00)
 #define VM_THREAD_STATE_RUNNING ((TVMTreadState) 0x01)
 #define VM_THREAD_STATE_READY 	((TVMTreadState) 0x02)
@@ -34,17 +33,20 @@ extern "C"{
         //if valid address
         if(VMMain != NULL)
         {
-            std::cout<<"not NULL"<<std::endl;
             VMMain(argc, argv);
             return VM_STATUS_SUCCESS;
         }
         else
         {
-            std::cout<<"NULL"<<std::endl;
             return VM_STATUS_FAILURE;
         }
 
 	}
+
+    TVMStatus VMThreadSleep(TVMTick tick)
+    {
+        
+    }
 
 
     TVMStatus VMFileWrite(int filedescriptor, void *data, int *length)
