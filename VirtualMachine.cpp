@@ -16,7 +16,17 @@
 #define MachineConextRestore(mcntx) longjmp((mcntx)->DJumpBuffer, 1)
 #define MachineConextSwitch(mcntxold,mcntxnew) if(setjmp((mcntxold)->DJumpBuffer)==0) longjmp((mcntxnew)->DJumpBuffer,1)
 */
-
+typedef struct TCB{
+	TVMThreadEntry entry;	//for the tread entry function 
+	SMachineContext context;//for the context to switch to/from the thread
+	TVMThreadID thread_ID;	//to hold ID
+	TVMThreadPriority threadPriority;	//for thread priority
+	TVMThreadState threadState;	//for thread stack
+	TVMMemorySize memorySize;	//for stack size
+	uint8_t *baseStack;		//pointer for base of stack
+	void *threadParameter;	// for thread entry parameter
+	TVMTick ticks;			// for the ticcks that thread needs to wait
+}
 extern "C"{
     volatile TVMTick globalTick;
 
