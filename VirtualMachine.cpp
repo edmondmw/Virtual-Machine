@@ -42,9 +42,7 @@ extern "C"
     }
 
     TVMStatus VMStart(int tickms, int machinetickms, int argc, char *argv[])
-	{
-        TCB aTCB;    
-
+	{    
         //declare it
 		TVMMainEntry mainEntry;
 
