@@ -6,28 +6,31 @@
 #define VM_THREAD_STATE_RUNNING ((TVMTreadState) 0x01)
 #define VM_THREAD_STATE_READY 	((TVMTreadState) 0x02)
 #define VM_THREAD_STATE_WAITING ((TVMTreadState) 0x03)
-#define VM_TIMEOUT_INFINITE		((TVMTick)0)
-#define VM_TIMEOUT_IMMEDIATE	((TVMTick)-1)
+extern "C"{
+#define VM_TIMEOUT_INFINITE        ((TVMTick)0)
+#define VM_TIMEOUT_IMMEDIATE    ((TVMTick)-1)
 #define VMPrint(format, ...)
-	VMFilePrint (1, format, ##__VA_ARGS__)
+    VMFilePrint (1, format, ##__VA_ARGS__)
 #define VMPrintError (format, ...)
-	VMFilePrint (2, format, ##__VA_ARGS__)
+    VMFilePrint (2, format, ##__VA_ARGS__)
 #define MachineConetextSave(mcntx) setjmp((mcntx)->DJumpBuffer)
 #define MachineConextRestore(mcntx) longjmp((mcntx)->DJumpBuffer, 1)
 #define MachineConextSwitch(mcntxold,mcntxnew) if(setjmp((mcntxold)->DJumpBuffer)==0) longjmp((mcntxnew)->DJumpBuffer,1)
 */
-typedef struct TCB{
-	TVMThreadEntry entry;	//for the tread entry function 
-	SMachineContext context;//for the context to switch to/from the thread
-	TVMThreadID thread_ID;	//to hold ID
-	TVMThreadPriority threadPriority;	//for thread priority
-	TVMThreadState threadState;	//for thread stack
-	TVMMemorySize memorySize;	//for stack size
-	uint8_t *baseStack;		//pointer for base of stack
-	void *threadParameter;	// for thread entry parameter
-	TVMTick ticks;			// for the ticcks that thread needs to wait
-}
-extern "C"{
+extern "C"
+{    
+    typedef struct{
+        TVMThreadEntry entry;    //for the tread entry function 
+        SMachineContext context;//for the context to switch to/from the thread
+        TVMThreadID thread_ID;    //to hold ID
+        TVMThreadPriority threadPriority;    //for thread priority
+        TVMThreadState threadState;    //for thread stack
+        TVMMemorySize memorySize;    //for stack size
+        uint8_t *baseStack;        //pointer for base of stack
+        void *threadParameter;    // for thread entry parameter
+        TVMTick ticks;            // for the ticcks that thread needs to wait
+    }TCB; 
+
     volatile TVMTick globalTick;
 
     TVMMainEntry VMLoadModule(const char *module);
@@ -40,22 +43,21 @@ extern "C"{
 
     TVMStatus VMStart(int tickms, int machinetickms, int argc, char *argv[])
 	{
-        //dyfine TVMMain as a type of function pointer that takes in int argc and char *argv[]
-		typedef void (*TVMMain)(int argc, char *argv[]);
-		
+        TCB aTCB;    
+
         //declare it
-		TVMMain VMMain;
+		TVMMainEntry mainEntry;
 
         //load the module
-		VMMain = VMLoadModule(argv[0]);	
+		mainEntry = VMLoadModule(argv[0]);	
 
         MachineInitialize(machinetickms);
         MachineRequestAlarm(tickms*1000,(TMachineAlarmCallback)AlarmRequestCallback,NULL);
 
         //if valid address
-        if(VMMain != NULL)
+        if(mainEntry != NULL)
         {
-            VMMain(argc, argv);
+            mainEntry(argc, argv);
             return VM_STATUS_SUCCESS;
         }
         else
