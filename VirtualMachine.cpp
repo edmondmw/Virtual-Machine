@@ -2,60 +2,49 @@
 #include "Machine.h"
 #include <unistd.h>
 #include <iostream>
-/*#define VM_THREAD_STATE_DEAD 	((TVMTreadState) 0x00)
-#define VM_THREAD_STATE_RUNNING ((TVMTreadState) 0x01)
-#define VM_THREAD_STATE_READY 	((TVMTreadState) 0x02)
-#define VM_THREAD_STATE_WAITING ((TVMTreadState) 0x03)
-extern "C"{
-#define VM_TIMEOUT_INFINITE        ((TVMTick)0)
-#define VM_TIMEOUT_IMMEDIATE    ((TVMTick)-1)
-#define VMPrint(format, ...)
-    VMFilePrint (1, format, ##__VA_ARGS__)
-#define VMPrintError (format, ...)
-    VMFilePrint (2, format, ##__VA_ARGS__)
-#define MachineConetextSave(mcntx) setjmp((mcntx)->DJumpBuffer)
-#define MachineConextRestore(mcntx) longjmp((mcntx)->DJumpBuffer, 1)
-#define MachineConextSwitch(mcntxold,mcntxnew) if(setjmp((mcntxold)->DJumpBuffer)==0) longjmp((mcntxnew)->DJumpBuffer,1)
-*/
+#include <vector>
+
 extern "C"
 {    
+
     typedef struct{
         TVMThreadEntry entry;    //for the tread entry function 
         SMachineContext context;//for the context to switch to/from the thread
-        TVMThreadID thread_ID;    //to hold ID
-        TVMThreadPriority threadPriority;    //for thread priority
-        TVMThreadState threadState;    //for thread stack
-        TVMMemorySize memorySize;    //for stack size
-        uint8_t *baseStack;        //pointer for base of stack
-        void *threadParameter;    // for thread entry parameter
+        TVMThreadID Thread_ID;    //to hold ID
+        TVMThreadPriority ThreadPriority;    //for thread priority
+        TVMThreadState ThreadState;    //for thread stack
+        TVMMemorySize MemorySize;    //for stack size
+        uint8_t *BaseStack;        //pointer for base of stack
+        void *ThreadParameter;    // for thread entry parameter
         TVMTick ticks;            // for the ticcks that thread needs to wait
     }TCB; 
 
-    volatile TVMTick globalTick;
+    volatile TVMTick GlobalTick;
+
+    std::vector<TCB*> ThreadIDVector;
 
     TVMMainEntry VMLoadModule(const char *module);
 
     void AlarmRequestCallback(void *var)
     {
-        globalTick--;
-        //std::cout<<"global tick: "<<globalTick<<std::endl;
+        GlobalTick--;
     }
 
     TVMStatus VMStart(int tickms, int machinetickms, int argc, char *argv[])
 	{    
         //declare it
-		TVMMainEntry mainEntry;
+		TVMMainEntry MainEntry;
 
         //load the module
-		mainEntry = VMLoadModule(argv[0]);	
+		MainEntry = VMLoadModule(argv[0]);	
 
         MachineInitialize(machinetickms);
         MachineRequestAlarm(tickms*1000,(TMachineAlarmCallback)AlarmRequestCallback,NULL);
 
         //if valid address
-        if(mainEntry != NULL)
+        if(MainEntry != NULL)
         {
-            mainEntry(argc, argv);
+            MainEntry(argc, argv);
             return VM_STATUS_SUCCESS;
         }
         else
@@ -74,10 +63,10 @@ extern "C"
 
         //add if VM_TIMEOUT_ERROR
 
-        globalTick = tick;
+        GlobalTick = tick;
 
         //thread is sleeping until globalTick is set to zero
-        while(0 != globalTick)
+        while(0 != GlobalTick)
         {    
         }  
         return VM_STATUS_SUCCESS;
@@ -101,4 +90,38 @@ extern "C"
             return VM_STATUS_SUCCESS;
         }
     }    
+
+    TVMStatus VMThreadCreate(TVMThreadEntry entry, void *param, TVMMemorySize memsize, TVMThreadPriority prio, TVMThreadIDRef tid)
+    {
+        if(tid == NULL || entry == NULL)
+        {
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+        TCB ATCB;
+        TCB *OneTCB = &ATCB;
+        std::cout<<ThreadIDVector.size()<<std::endl;
+        //thread id is equal to the size of the vector so it can be added to the end
+        OneTCB->Thread_ID = ThreadIDVector.size();
+        std::cout<<"after set tcb tid"<<std::endl;
+        *tid = OneTCB->Thread_ID;
+        std::cout<<"after tid"<<std::endl;
+        OneTCB->entry = entry;
+        std::cout<<"before param"<<std::endl;
+        OneTCB->ThreadParameter = param;
+        std::cout<<"after param"<<std::endl;
+        OneTCB->MemorySize = memsize;
+        OneTCB->ThreadPriority = prio;
+        OneTCB->ThreadState = VM_THREAD_STATE_DEAD;
+        std::cout<<"BEFORE new"<<std::endl;
+        OneTCB->BaseStack = new uint8_t[memsize];
+        std::cout<<"AFTER new"<< std::endl;
+        ThreadIDVector.push_back(OneTCB);
+        std::cout<<"after push"<<std::endl;
+        MachineResumeSignals(&OldState);
+        std::cout<<"after resume"<<std::endl;
+        return VM_STATUS_SUCCESS;
+    }
 }
