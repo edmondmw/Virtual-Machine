@@ -27,18 +27,16 @@ extern "C"
     volatile TVMThreadID CurrentThreadIndex;
 
     vector<TCB*> ThreadIDVector;
-    queue<TCB*> LowQueue;
-    queue<TCB*> NormalQueue;
-    queue<TCB*> HighQueue;
-    queue<TCB*> WaitingQueue;
+    vector<TCB*> LowQueue;
+    vector<TCB*> NormalQueue;
+    vector<TCB*> HighQueue;
+    vector<TCB*> WaitingQueue;
+    vector<TCB*> SleepingQueue;
 
 
     TVMMainEntry VMLoadModule(const char *module);
 
-    void AlarmRequestCallback(void *var)
-    {
-        GlobalTick--;
-    }
+   
 
     void IdleEntry(void *param)
     {
@@ -62,20 +60,20 @@ extern "C"
             switch(ThreadIDVector[thread]->ThreadPriority)
             {
                 case VM_THREAD_PRIORITY_LOW:    
-                    LowQueue.push(ThreadIDVector[thread]);
+                    LowQueue.push_back(ThreadIDVector[thread]);
                     break;
                 case VM_THREAD_PRIORITY_NORMAL:
-                    NormalQueue.push(ThreadIDVector[thread]);
+                    NormalQueue.push_back(ThreadIDVector[thread]);
                     break;
                 case VM_THREAD_PRIORITY_HIGH:
-                    HighQueue.push(ThreadIDVector[thread]);
+                    HighQueue.push_back(ThreadIDVector[thread]);
                     break;
             }
         }
 
         else if(ThreadIDVector[thread]->ThreadState == VM_THREAD_STATE_WAITING)
         {
-            WaitingQueue.push(ThreadIDVector[thread]);
+            SleepingQueue.push_back(ThreadIDVector[thread]);
         }
 
     }
@@ -90,7 +88,7 @@ extern "C"
             if(!HighQueue.empty()&&(VM_THREAD_PRIORITY_HIGH > ThreadIDVector[CurrentThreadIndex]->ThreadPriority))
             {
                 tid = HighQueue.front()->Thread_ID;
-                HighQueue.pop();
+                HighQueue.erase(HighQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
                 CurrentThreadIndex = tid;
                 ThreadIDVector[Original]->ThreadState = VM_THREAD_STATE_READY;
@@ -101,24 +99,24 @@ extern "C"
             else if(!NormalQueue.empty()&&(VM_THREAD_PRIORITY_NORMAL > ThreadIDVector[CurrentThreadIndex]->ThreadPriority))
             {
                 tid = NormalQueue.front()->Thread_ID;
-                NormalQueue.pop();
+                NormalQueue.erase(NormalQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
                 CurrentThreadIndex = tid;
                 ThreadIDVector[Original]->ThreadState = VM_THREAD_STATE_READY;
                 PlaceIntoQueue(Original);
-                MachineContextSwitch(&ThreadIDVector[Original]->context,&ThreadIDVector[tid]->context);
+                MachineContextSwitch(&(ThreadIDVector[Original]->context),&(ThreadIDVector[tid]->context));
 
             }
 
             else if(!LowQueue.empty()&&(VM_THREAD_PRIORITY_LOW > ThreadIDVector[CurrentThreadIndex]->ThreadPriority))
             {
                 tid = LowQueue.front()->Thread_ID;
-                LowQueue.pop();
+                LowQueue.erase(LowQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
                 CurrentThreadIndex = tid;
                 ThreadIDVector[Original]->ThreadState = VM_THREAD_STATE_READY;
                 PlaceIntoQueue(Original);
-                MachineContextSwitch(&ThreadIDVector[Original]->context,&ThreadIDVector[tid]->context);
+                MachineContextSwitch(&(ThreadIDVector[Original]->context),&(ThreadIDVector[tid]->context));
 
             }
             /* for idle
@@ -136,7 +134,7 @@ extern "C"
             if(!HighQueue.empty())
             {
                 tid = HighQueue.front()->Thread_ID;
-                HighQueue.pop();
+                HighQueue.erase(HighQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
                 CurrentThreadIndex = tid;
                 MachineContextSwitch(&ThreadIDVector[Original]->context,&ThreadIDVector[tid]->context);
@@ -145,7 +143,7 @@ extern "C"
             else if(!NormalQueue.empty())
             {
                 tid = NormalQueue.front()->Thread_ID;
-                NormalQueue.pop();
+                NormalQueue.erase(NormalQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
                 CurrentThreadIndex = tid;
                 MachineContextSwitch(&ThreadIDVector[Original]->context,&ThreadIDVector[tid]->context);
@@ -155,7 +153,7 @@ extern "C"
             else if(!LowQueue.empty())
             {
                 tid = LowQueue.front()->Thread_ID;
-                LowQueue.pop();
+                LowQueue.erase(LowQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
                 CurrentThreadIndex = tid;
                 MachineContextSwitch(&ThreadIDVector[Original]->context,&ThreadIDVector[tid]->context);
@@ -171,6 +169,22 @@ extern "C"
         }
     }
 
+    void AlarmRequestCallback(void *var)
+    {
+        for(unsigned  i = 0; i < SleepingQueue.size(); i++)
+        {
+            SleepingQueue[i]->ticks--;
+            if(SleepingQueue[i]->ticks == 0)
+            {
+                SleepingQueue[i]->ThreadState = VM_THREAD_STATE_READY;
+                PlaceIntoQueue(SleepingQueue[i]->Thread_ID);
+                SleepingQueue.erase(SleepingQueue.begin() + i);
+                i--;
+            }
+        }
+
+        scheduler();
+    }
 
     TVMStatus VMStart(int tickms, int machinetickms, int argc, char *argv[])
 	{    
@@ -184,21 +198,22 @@ extern "C"
         MachineRequestAlarm(tickms*1000,(TMachineAlarmCallback)AlarmRequestCallback,NULL);
 
         //create main thread
-        TCB *MainThread = new TCB;
-        MainThread->Thread_ID = 0;
-        MainThread->ThreadPriority = VM_THREAD_PRIORITY_NORMAL;
-        MainThread->ThreadState = VM_THREAD_STATE_RUNNING;
-        ThreadIDVector.push_back(MainThread);
-        CurrentThreadIndex = MainThread->Thread_ID;
+        ThreadIDVector.push_back(new TCB);
+        ThreadIDVector[0]->Thread_ID = 0;
+        ThreadIDVector[0]->ThreadPriority = VM_THREAD_PRIORITY_NORMAL;
+        ThreadIDVector[0]->ThreadState = VM_THREAD_STATE_RUNNING;
+        
+        CurrentThreadIndex = 0;
 
-        TCB *IdleThread = new TCB;
-        IdleThread->entry = IdleEntry;
-        IdleThread->Thread_ID = 1;
-        IdleThread->ThreadState = VM_THREAD_STATE_READY;
-        IdleThread->ThreadPriority = 0x00;
-        IdleThread->MemorySize = 0x100000;
-        IdleThread->BaseStack = new uint8_t[IdleThread->MemorySize];
-        ThreadIDVector.push_back(IdleThread);
+        ThreadIDVector.push_back(new TCB);
+        ThreadIDVector[1]->entry = IdleEntry;
+        ThreadIDVector[1]->Thread_ID = 1;
+        ThreadIDVector[1]->ThreadState = VM_THREAD_STATE_READY;
+        ThreadIDVector[1]->ThreadPriority = 0x00;
+        ThreadIDVector[1]->MemorySize = 0x100000;
+        ThreadIDVector[1]->BaseStack = new uint8_t[ThreadIDVector[1]->MemorySize];
+
+        MachineContextCreate(&(ThreadIDVector[1]->context), IdleEntry , NULL,ThreadIDVector[1]->BaseStack, ThreadIDVector[1]->MemorySize);
 
 
         //if valid address
@@ -222,13 +237,14 @@ extern "C"
         }
 
         //add if VM_TIMEOUT_ERROR
+        ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
 
-        GlobalTick = tick;
+        ThreadIDVector[CurrentThreadIndex]->ticks = tick;
 
-        //thread is sleeping until globalTick is set to zero
-        while(0 != GlobalTick)
-        {    
-        }  
+        SleepingQueue.push_back(ThreadIDVector[CurrentThreadIndex]);
+
+        scheduler();
+
         return VM_STATUS_SUCCESS;
     }
 
@@ -260,18 +276,18 @@ extern "C"
 
         TMachineSignalState OldState;
         MachineSuspendSignals(&OldState);
-        TCB ATCB;
-        TCB *OneTCB = &ATCB;
+
+        *tid = ThreadIDVector.size();
+        ThreadIDVector.push_back(new TCB);
         //thread id is equal to the size of the vector so it can be added to the end
-        OneTCB->Thread_ID = ThreadIDVector.size();
-        *tid = OneTCB->Thread_ID;
-        OneTCB->entry = entry;
-        OneTCB->ThreadParameter = param;
-        OneTCB->MemorySize = memsize;
-        OneTCB->ThreadPriority = prio;
-        OneTCB->ThreadState = VM_THREAD_STATE_DEAD;
-        OneTCB->BaseStack = new uint8_t[memsize];
-        ThreadIDVector.push_back(OneTCB);
+        ThreadIDVector[*tid]->Thread_ID = *tid;
+        ThreadIDVector[*tid]->entry = entry;
+        ThreadIDVector[*tid]->ThreadParameter = param;
+        ThreadIDVector[*tid]->MemorySize = memsize;
+        ThreadIDVector[*tid]->ThreadPriority = prio;
+        ThreadIDVector[*tid]->ThreadState = VM_THREAD_STATE_DEAD;
+        ThreadIDVector[*tid]->BaseStack = new uint8_t[memsize];
+
         MachineResumeSignals(&OldState);
         return VM_STATUS_SUCCESS;
     }
@@ -309,12 +325,15 @@ extern "C"
         }
 
         ThreadIDVector[thread]->ThreadState = VM_THREAD_STATE_DEAD;
+
+        scheduler();
         return VM_STATUS_SUCCESS;
 
     }
 
     TVMStatus VMThreadState(TVMThreadID thread, TVMThreadStateRef stateref)
     {
+
         if(thread >= ThreadIDVector.size()|| thread<0)
         {
             return VM_STATUS_ERROR_INVALID_ID;
@@ -322,10 +341,13 @@ extern "C"
 
         if(stateref == NULL)
         {
+            cout<<"null"<<endl;
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
 
-        stateref = &(ThreadIDVector[thread]->ThreadState);
+        *stateref = ThreadIDVector[thread]->ThreadState;
+     
+
         return VM_STATUS_SUCCESS;
 
     }
