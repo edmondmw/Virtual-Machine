@@ -39,6 +39,7 @@ extern "C"
 
     void IdleEntry(void *param)
     {
+        MachineEnableSignals();
         while(true)
         {
         }
@@ -70,12 +71,11 @@ extern "C"
             }
         }
 
-       /* else if(ThreadIDVector[thread]->ThreadState == VM_THREAD_STATE_WAITING)
+        else if(ThreadIDVector[thread]->ThreadState == VM_THREAD_STATE_WAITING)
         {
-            WaitingQueue.push_back(ThreadIDVector[thread]);
-            if(ThreadIDVector[thread])
+            SleepingQueue.push_back(ThreadIDVector[thread]);
         }
-*/
+
 
     }
 
@@ -224,6 +224,7 @@ extern "C"
         //if valid address
         if(VMMain != NULL)
         {
+            MachineEnableSignals();
             VMMain(argc, argv);
             MachineResumeSignals(&OldState);
             return VM_STATUS_SUCCESS;
@@ -383,7 +384,51 @@ extern "C"
 
     }
 
-    
 
+    TVMStatus VMThreadDelete(TVMThreadID thread)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
+
+        //if out of bounds or thread is deleted
+        if(thread > (ThreadIDVector.size()-1) || thread < 0 ||ThreadIDVector[thread] == NULL)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_ID;
+        }
+        //if state is dead delete the thread
+        if(ThreadIDVector[thread]->ThreadState == VM_THREAD_STATE_DEAD)
+        {
+            ThreadIDVector[thread] = NULL;
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_SUCCESS;
+        }
+        //state is not dead
+        else
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_STATE;
+        }
+
+    }
+
+    TVMStatus VMThreadID(TVMThreadIDRef threadref)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
+        if(threadref == NULL)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+        *threadref =  ThreadIDVector[CurrentThreadIndex]->Thread_ID;
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;
+
+
+    }
 
 }
