@@ -185,6 +185,12 @@ extern "C"
             }
         }
 
+        //if current thread is running then put it into a ready queue
+        if(ThreadIDVector[CurrentThreadIndex]->ThreadState == VM_THREAD_STATE_RUNNING)
+        {
+            ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_READY;
+            PlaceIntoQueue(CurrentThreadIndex);
+        }       
         scheduler();
     }
 
@@ -431,4 +437,9 @@ extern "C"
 
     }
 
+
+    TVMStatus VMFileOpen(const char *filename, int flags, int mode, int *filedescriptor)
+    {
+        
+    }
 }
