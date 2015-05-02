@@ -23,7 +23,6 @@ extern "C"
         TVMTick ticks;            // for the ticcks that thread needs to wait
     }TCB; 
 
-    volatile TVMTick GlobalTick;
     volatile TVMThreadID CurrentThreadIndex;
 
     vector<TCB*> ThreadIDVector;
@@ -71,10 +70,12 @@ extern "C"
             }
         }
 
-        else if(ThreadIDVector[thread]->ThreadState == VM_THREAD_STATE_WAITING)
+       /* else if(ThreadIDVector[thread]->ThreadState == VM_THREAD_STATE_WAITING)
         {
-            SleepingQueue.push_back(ThreadIDVector[thread]);
+            WaitingQueue.push_back(ThreadIDVector[thread]);
+            if(ThreadIDVector[thread])
         }
+*/
 
     }
 
@@ -174,6 +175,7 @@ extern "C"
         for(unsigned  i = 0; i < SleepingQueue.size(); i++)
         {
             SleepingQueue[i]->ticks--;
+            //If ticks are at zero remove it from the sleeping queue and place into ready queue
             if(SleepingQueue[i]->ticks == 0)
             {
                 SleepingQueue[i]->ThreadState = VM_THREAD_STATE_READY;
@@ -188,6 +190,9 @@ extern "C"
 
     TVMStatus VMStart(int tickms, int machinetickms, int argc, char *argv[])
 	{    
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
         //declare it
 		TVMMainEntry VMMain;
 
@@ -220,10 +225,12 @@ extern "C"
         if(VMMain != NULL)
         {
             VMMain(argc, argv);
+            MachineResumeSignals(&OldState);
             return VM_STATUS_SUCCESS;
         }
         else
         {
+            MachineResumeSignals(&OldState);
             return VM_STATUS_FAILURE;
         }
 
@@ -231,8 +238,12 @@ extern "C"
 
     TVMStatus VMThreadSleep(TVMTick tick)
     {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
         if(tick == VM_TIMEOUT_INFINITE)
         {
+            MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
 
@@ -245,37 +256,48 @@ extern "C"
 
         scheduler();
 
+        MachineResumeSignals(&OldState);
+
         return VM_STATUS_SUCCESS;
     }
 
 
     TVMStatus VMFileWrite(int filedescriptor, void *data, int *length)
     {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
         if(data == NULL || length == NULL)
         {
+            MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
 
         else if(write(filedescriptor, data, *length) < 0) 
         {
+            MachineResumeSignals(&OldState);
             return VM_STATUS_FAILURE;
         }
 
         else
         {
+            MachineResumeSignals(&OldState);
             return VM_STATUS_SUCCESS;
         }
     }    
 
     TVMStatus VMThreadCreate(TVMThreadEntry entry, void *param, TVMMemorySize memsize, TVMThreadPriority prio, TVMThreadIDRef tid)
     {
-        if(tid == NULL || entry == NULL)
-        {
-            return VM_STATUS_ERROR_INVALID_PARAMETER;
-        }
+        
 
         TMachineSignalState OldState;
         MachineSuspendSignals(&OldState);
+
+        if(tid == NULL || entry == NULL)
+        {
+            MachineResumeSignals(&OldState);   
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
 
         *tid = ThreadIDVector.size();
         ThreadIDVector.push_back(new TCB);
@@ -315,42 +337,53 @@ extern "C"
 
     TVMStatus VMThreadTerminate(TVMThreadID thread)
     {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
         if(thread >= ThreadIDVector.size() || thread < 0)
         {
+            MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_ID;
         }
         if(ThreadIDVector[thread]->ThreadState == VM_THREAD_STATE_DEAD)
         {
+            MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_STATE;
         }
 
         ThreadIDVector[thread]->ThreadState = VM_THREAD_STATE_DEAD;
 
         scheduler();
+        MachineResumeSignals(&OldState);
         return VM_STATUS_SUCCESS;
 
     }
 
     TVMStatus VMThreadState(TVMThreadID thread, TVMThreadStateRef stateref)
     {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
 
         if(thread >= ThreadIDVector.size()|| thread<0)
         {
+            MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_ID;
         }
 
         if(stateref == NULL)
         {
-            cout<<"null"<<endl;
+            MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
 
         *stateref = ThreadIDVector[thread]->ThreadState;
      
-
+        MachineResumeSignals(&OldState);
         return VM_STATUS_SUCCESS;
 
     }
+
+    
 
 
 }
