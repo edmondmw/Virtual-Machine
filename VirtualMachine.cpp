@@ -317,7 +317,7 @@ extern "C"
         }
 
         MachineFileOpen(filename, flags, mode, (TMachineFileCallback)FileCallback, ThreadIDVector[CurrentThreadIndex]);
-        filedescriptor = ThreadIDVector[CurrentThreadIndex]->result; 
+        filedescriptor = ThreadIDVector[CurrentThreadIndex]->file; 
 
         ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
         WaitingQueue.push_back(ThreadIDVector[CurrentThreadIndex]);
@@ -327,6 +327,54 @@ extern "C"
         return VM_STATUS_SUCCESS;
     }
 
+    TVMStatus VMFileClose(int filedescriptor)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
+
+        MachineFileClose(filedescriptor, FileCallback, ThreadIDVector[CurrentThreadIndex]);
+        ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+        scheduler();  
+
+        if(ThreadIDVector[CurrentThreadIndex]->file < 0)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_FAILURE;
+        }
+
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;      
+
+    }    
+
+    TVMStatus VMFileRead(int filedescriptor, void *data, int *length)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
+        if(data == NULL || length == NULL)
+        {
+           // MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+
+        MachineFileRead(filedescriptor, data, *length, FileCallback, ThreadIDVector[CurrentThreadIndex]);
+        ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+        scheduler();  
+
+        if(ThreadIDVector[CurrentThreadIndex]->file < 0)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_FAILURE;
+        }
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;      
+
+    }    
+
+    
 
 
     TVMStatus VMThreadCreate(TVMThreadEntry entry, void *param, TVMMemorySize memsize, TVMThreadPriority prio, TVMThreadIDRef tid)
