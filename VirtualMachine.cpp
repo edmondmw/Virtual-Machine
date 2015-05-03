@@ -20,7 +20,12 @@ extern "C"
         TVMMemorySize MemorySize;    //for stack size
         uint8_t *BaseStack;        //pointer for base of stack
         void *ThreadParameter;    // for thread entry parameter
+<<<<<<< HEAD
 		TVMTick ticks;
+=======
+        TVMTick ticks;            // for the ticcks that thread needs to wait
+        int file;
+>>>>>>> File
     }TCB; 
 
 	typedef struct
@@ -78,13 +83,13 @@ extern "C"
                     break;
             }
         }
-
+/*
         else if(ThreadIDVector[thread]->ThreadState == VM_THREAD_STATE_WAITING)
         {
             SleepingQueue.push_back(ThreadIDVector[thread]);
         }
 
-
+*/
     }
 
     void scheduler()
@@ -204,7 +209,11 @@ extern "C"
 
     TVMStatus VMStart(int tickms, int machinetickms, int argc, char *argv[])
 	{    
+<<<<<<< HEAD
         //TMachineSignalState OldState;
+=======
+       // TMachineSignalState OldState;
+>>>>>>> File
         //MachineSuspendSignals(&OldState);
 
         //declare it
@@ -240,12 +249,20 @@ extern "C"
         {
             MachineEnableSignals();
             VMMain(argc, argv);
+<<<<<<< HEAD
            // MachineResumeSignals(&OldState);
+=======
+          //  MachineResumeSignals(&OldState);
+>>>>>>> File
             return VM_STATUS_SUCCESS;
         }
         else
         {
+<<<<<<< HEAD
           //  MachineResumeSignals(&OldState);
+=======
+            //MachineResumeSignals(&OldState);
+>>>>>>> File
             return VM_STATUS_FAILURE;
         }
 
@@ -277,6 +294,17 @@ extern "C"
     }
 
 
+    void FileCallback(void* calldata, int result)
+    {    
+        TCB* MyTCB = (TCB*)calldata;
+        //ThreadIDVector[MyTCB->Thread_ID]->file = result;
+        MyTCB->file = result;
+        MyTCB->ThreadState = VM_THREAD_STATE_READY;
+
+        PlaceIntoQueue(MyTCB->Thread_ID);
+        scheduler();
+    }
+
     TVMStatus VMFileWrite(int filedescriptor, void *data, int *length)
     {
         TMachineSignalState OldState;
@@ -284,35 +312,119 @@ extern "C"
 
         if(data == NULL || length == NULL)
         {
-            MachineResumeSignals(&OldState);
+           // MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
 
-        else if(write(filedescriptor, data, *length) < 0) 
+
+        MachineFileWrite(filedescriptor, data, *length, FileCallback, ThreadIDVector[CurrentThreadIndex]);
+        ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+        scheduler();  
+
+        if(ThreadIDVector[CurrentThreadIndex]->file < 0)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_FAILURE;
+        }
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;      
+
+    }    
+
+    TVMStatus VMFileOpen(const char *filename, int flags, int mode, int *filedescriptor)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+        if(filename == NULL || filedescriptor == NULL)
+        {
+            //return error
+        }
+
+        MachineFileOpen(filename, flags, mode, (TMachineFileCallback)FileCallback, ThreadIDVector[CurrentThreadIndex]);
+
+        ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+        WaitingQueue.push_back(ThreadIDVector[CurrentThreadIndex]);
+        scheduler();
+
+        *filedescriptor = ThreadIDVector[CurrentThreadIndex]->file;
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;
+    }
+
+    TVMStatus VMFileClose(int filedescriptor)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
+
+        MachineFileClose(filedescriptor, FileCallback, ThreadIDVector[CurrentThreadIndex]);
+        ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+        scheduler();  
+
+        if(ThreadIDVector[CurrentThreadIndex]->file < 0)
         {
             MachineResumeSignals(&OldState);
             return VM_STATUS_FAILURE;
         }
 
-        else
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;      
+
+    }    
+
+    TVMStatus VMFileRead(int filedescriptor, void *data, int *length)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
+        if(data == NULL || length == NULL)
+        {
+           // MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+
+        MachineFileRead(filedescriptor, data, *length, FileCallback, ThreadIDVector[CurrentThreadIndex]);
+        ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+        scheduler();  
+
+        *length = ThreadIDVector[CurrentThreadIndex]->file;
+
+        if(ThreadIDVector[CurrentThreadIndex]->file < 0)
         {
             MachineResumeSignals(&OldState);
-            return VM_STATUS_SUCCESS;
+            return VM_STATUS_FAILURE;
         }
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;      
+
+    }    
+
+
+    TVMStatus VMFileSeek(int filedescriptor, int offset, int whence,int *newoffset)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
+        MachineFileSeek(filedescriptor, offset, whence, FileCallback, ThreadIDVector[CurrentThreadIndex]);
+        ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+        scheduler();  
+
+        *newoffset = ThreadIDVector[CurrentThreadIndex]->file;
+        if(ThreadIDVector[CurrentThreadIndex]->file < 0)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_FAILURE;
+        }
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;      
+
     }    
 
     TVMStatus VMThreadCreate(TVMThreadEntry entry, void *param, TVMMemorySize memsize, TVMThreadPriority prio, TVMThreadIDRef tid)
     {
-        
-
         TMachineSignalState OldState;
         MachineSuspendSignals(&OldState);
-
-        if(tid == NULL || entry == NULL)
-        {
-            MachineResumeSignals(&OldState);   
-            return VM_STATUS_ERROR_INVALID_PARAMETER;
-        }
 
         *tid = ThreadIDVector.size();
         ThreadIDVector.push_back(new TCB);
@@ -445,6 +557,7 @@ extern "C"
 
     }
 
+<<<<<<< HEAD
 /*
     TVMStatus VMFileOpen(const char *filename, int flags, int mode, int *filedescriptor)
     {
@@ -472,4 +585,6 @@ extern "C"
 			
 	}
 
+=======
+>>>>>>> File
 }
