@@ -317,12 +317,12 @@ extern "C"
         }
 
         MachineFileOpen(filename, flags, mode, (TMachineFileCallback)FileCallback, ThreadIDVector[CurrentThreadIndex]);
-        filedescriptor = ThreadIDVector[CurrentThreadIndex]->file; 
 
         ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
         WaitingQueue.push_back(ThreadIDVector[CurrentThreadIndex]);
         scheduler();
 
+        *filedescriptor = ThreadIDVector[CurrentThreadIndex]->file;
         MachineResumeSignals(&OldState);
         return VM_STATUS_SUCCESS;
     }
@@ -364,6 +364,8 @@ extern "C"
         ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
         scheduler();  
 
+        *length = ThreadIDVector[CurrentThreadIndex]->file;
+
         if(ThreadIDVector[CurrentThreadIndex]->file < 0)
         {
             MachineResumeSignals(&OldState);
@@ -374,19 +376,31 @@ extern "C"
 
     }    
 
-    
 
+    TVMStatus VMFileSeek(int filedescriptor, int offset, int whence,int *newoffset)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
+        MachineFileSeek(filedescriptor, offset, whence, FileCallback, ThreadIDVector[CurrentThreadIndex]);
+        ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+        scheduler();  
+
+        *newoffset = ThreadIDVector[CurrentThreadIndex]->file;
+        if(ThreadIDVector[CurrentThreadIndex]->file < 0)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_FAILURE;
+        }
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;      
+
+    }    
 
     TVMStatus VMThreadCreate(TVMThreadEntry entry, void *param, TVMMemorySize memsize, TVMThreadPriority prio, TVMThreadIDRef tid)
     {
         TMachineSignalState OldState;
         MachineSuspendSignals(&OldState);
-
-        if(tid == NULL || entry == NULL)
-        {
-            MachineResumeSignals(&OldState);   
-            return VM_STATUS_ERROR_INVALID_PARAMETER;
-        }
 
         *tid = ThreadIDVector.size();
         ThreadIDVector.push_back(new TCB);
