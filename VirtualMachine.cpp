@@ -20,11 +20,19 @@ extern "C"
         TVMMemorySize MemorySize;    //for stack size
         uint8_t *BaseStack;        //pointer for base of stack
         void *ThreadParameter;    // for thread entry parameter
-        TVMTick ticks;            // for the ticcks that thread needs to wait
+		TVMTick ticks;
     }TCB; 
 
-    volatile TVMThreadID CurrentThreadIndex;
+	typedef struct
+	{
+		TVMMutexID MutexID;
+	//	datatype OwnerID;
+		TVMTick ticks;
+	}mutex;
 
+    volatile TVMThreadID CurrentThreadIndex;
+	
+	vector<mutex*> MutexIDVector;
     vector<TCB*> ThreadIDVector;
     vector<TCB*> LowQueue;
     vector<TCB*> NormalQueue;
@@ -196,8 +204,8 @@ extern "C"
 
     TVMStatus VMStart(int tickms, int machinetickms, int argc, char *argv[])
 	{    
-        TMachineSignalState OldState;
-        MachineSuspendSignals(&OldState);
+        //TMachineSignalState OldState;
+        //MachineSuspendSignals(&OldState);
 
         //declare it
 		TVMMainEntry VMMain;
@@ -232,12 +240,12 @@ extern "C"
         {
             MachineEnableSignals();
             VMMain(argc, argv);
-            MachineResumeSignals(&OldState);
+           // MachineResumeSignals(&OldState);
             return VM_STATUS_SUCCESS;
         }
         else
         {
-            MachineResumeSignals(&OldState);
+          //  MachineResumeSignals(&OldState);
             return VM_STATUS_FAILURE;
         }
 
@@ -437,9 +445,31 @@ extern "C"
 
     }
 
-
+/*
     TVMStatus VMFileOpen(const char *filename, int flags, int mode, int *filedescriptor)
     {
         
     }
+*/
+
+	TVMStatus VMMutexCreate(TVMMutexIDRef mutexref)
+	{
+		if(mutexref == NULL)
+		{
+			return VM_STATUS_ERROR_INVALID_PARAMETER;
+		}
+	
+		*mutexref =  MutexIDVector.size();
+		MutexIDVector.push_back(new mutex);
+		
+		MutexIDVector[*mutexref]->MutexID;
+		
+		return VM_STATUS_SUCCESS;
+	}
+
+	TVMStatus VMMutexAcquire(TVMMutexID mutex, TVMTick timeout)
+	{
+			
+	}
+
 }
