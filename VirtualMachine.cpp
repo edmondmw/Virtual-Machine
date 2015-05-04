@@ -326,7 +326,7 @@ extern "C"
 
         if(data == NULL || length == NULL)
         {
-           // MachineResumeSignals(&OldState);
+            MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
 
@@ -352,9 +352,18 @@ extern "C"
         if(filename == NULL || filedescriptor == NULL)
         {
             //return error
+			MachineResumeSignals(&OldState);
+			return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
 
         MachineFileOpen(filename, flags, mode, (TMachineFileCallback)FileCallback, ThreadIDVector[CurrentThreadIndex]);
+
+		//return vmstatusfailture if fileopen cant open
+		if(ThreadIDVector[CurrentThreadIndex]->file < 0)
+		{
+			MachineResumeSignals(&OldState);
+			return VM_STATUS_FAILURE;
+		}
 
         ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
         //WaitingQueue.push_back(ThreadIDVector[CurrentThreadIndex]);
@@ -363,6 +372,8 @@ extern "C"
         *filedescriptor = ThreadIDVector[CurrentThreadIndex]->file;
         MachineResumeSignals(&OldState);
         return VM_STATUS_SUCCESS;
+		
+		
     }
 
     TVMStatus VMFileClose(int filedescriptor)
@@ -393,7 +404,7 @@ extern "C"
 
         if(data == NULL || length == NULL)
         {
-           // MachineResumeSignals(&OldState);
+			MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
 
@@ -739,6 +750,16 @@ extern "C"
         MachineResumeSignals(&OldState);
         return VM_STATUS_SUCCESS;
 
+		if(mutex >= MutexIDVector.size()||mutex < 0)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_ID;
+        }
+		else if((mutex >= MutexIDVector.size() || mutex < 0) && MutexIDVector[mutex]->OwnerID != VM_THREAD_STATE_RUNNING)
+		{
+			MachineResumeSignals(&OldState);
+			return VM_STATUS_ERROR_INVALID_STATE;
+		}
     }
 
     TVMStatus VMMutexDelete(TVMMutexID mutex)
@@ -760,6 +781,7 @@ extern "C"
 
         MutexIDVector.erase(MutexIDVector.begin() + mutex);
 
+		MachineResumeSignals(&OldState);
         return VM_STATUS_SUCCESS;
     }
 
