@@ -767,11 +767,7 @@ extern "C"
             MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_ID;
         }
-		else if((mutex >= MutexIDVector.size() || mutex < 0) && MutexIDVector[mutex]->unlocked != VM_THREAD_STATE_RUNNING)
-		{
-			MachineResumeSignals(&OldState);
-			return VM_STATUS_ERROR_INVALID_STATE;
-		}
+		
     }
 
     TVMStatus VMMutexDelete(TVMMutexID mutex)
