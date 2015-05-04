@@ -20,19 +20,24 @@ extern "C"
         TVMMemorySize MemorySize;    //for stack size
         uint8_t *BaseStack;        //pointer for base of stack
         void *ThreadParameter;    // for thread entry parameter
-<<<<<<< HEAD
-		TVMTick ticks;
-=======
         TVMTick ticks;            // for the ticcks that thread needs to wait
         int file;
->>>>>>> File
+        TVMMutexID MyMutex;
+        int MutexPrioIndex;
+        int SleepingIndex;
+// Possibly hold a list of held mutexes
+
     }TCB; 
 
 	typedef struct
 	{
 		TVMMutexID MutexID;
-	//	datatype OwnerID;
-		TVMTick ticks;
+		TVMThreadID OwnerID;
+        bool unlocked;
+        vector<TCB*> HighPrio;
+        vector<TCB*> NormalPrio;
+        vector<TCB*> LowPrio;    
+
 	}mutex;
 
     volatile TVMThreadID CurrentThreadIndex;
@@ -42,7 +47,7 @@ extern "C"
     vector<TCB*> LowQueue;
     vector<TCB*> NormalQueue;
     vector<TCB*> HighQueue;
-    vector<TCB*> WaitingQueue;
+  //  vector<TCB*> WaitingQueue;
     vector<TCB*> SleepingQueue;
 
 
@@ -53,6 +58,7 @@ extern "C"
     void IdleEntry(void *param)
     {
         MachineEnableSignals();
+        //cerr<<"in idle"<<endl;
         while(true)
         {
         }
@@ -65,6 +71,28 @@ extern "C"
         VMThreadTerminate(CurrentThreadIndex);
     }
 
+
+    void PlaceIntoMutexQueue(TVMThreadID thread, TVMMutexID mutex)
+    {
+            switch(ThreadIDVector[thread]->ThreadPriority)
+            {
+                case VM_THREAD_PRIORITY_LOW:    
+                //cerr<<"place in low"<<endl;
+                    ThreadIDVector[thread]->MutexPrioIndex = MutexIDVector[mutex]->LowPrio.size();
+                    MutexIDVector[mutex]->LowPrio.push_back(ThreadIDVector[thread]);
+                    break;
+                case VM_THREAD_PRIORITY_NORMAL:
+                //cerr<<"place into norm"<<endl;
+                    ThreadIDVector[thread]->MutexPrioIndex = MutexIDVector[mutex]->NormalPrio.size();
+                    MutexIDVector[mutex]->NormalPrio.push_back(ThreadIDVector[thread]);
+                    break;
+                case VM_THREAD_PRIORITY_HIGH:
+                    //cerr<<"place into high"<<endl;
+                    ThreadIDVector[thread]->MutexPrioIndex = MutexIDVector[mutex]->HighPrio.size();
+                    MutexIDVector[mutex]->HighPrio.push_back(ThreadIDVector[thread]);
+                    break;
+            }
+    }
 
     void PlaceIntoQueue(TVMThreadID thread)
     {
@@ -83,17 +111,11 @@ extern "C"
                     break;
             }
         }
-/*
-        else if(ThreadIDVector[thread]->ThreadState == VM_THREAD_STATE_WAITING)
-        {
-            SleepingQueue.push_back(ThreadIDVector[thread]);
-        }
-
-*/
     }
 
     void scheduler()
     {
+        //cerr<<"in sched"<<endl;
         TVMThreadID tid;
         TVMThreadID Original = CurrentThreadIndex;
 
@@ -107,11 +129,14 @@ extern "C"
                 CurrentThreadIndex = tid;
                 ThreadIDVector[Original]->ThreadState = VM_THREAD_STATE_READY;
                 PlaceIntoQueue(Original);
+                //cerr<<"running high"<<endl;
+
                 MachineContextSwitch(&ThreadIDVector[Original]->context,&ThreadIDVector[tid]->context);
 
             }
             else if(!NormalQueue.empty()&&(VM_THREAD_PRIORITY_NORMAL > ThreadIDVector[CurrentThreadIndex]->ThreadPriority))
             {
+                //cerr<<"running n"<<endl;
                 tid = NormalQueue.front()->Thread_ID;
                 NormalQueue.erase(NormalQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
@@ -124,6 +149,7 @@ extern "C"
 
             else if(!LowQueue.empty()&&(VM_THREAD_PRIORITY_LOW > ThreadIDVector[CurrentThreadIndex]->ThreadPriority))
             {
+                //cerr<<"running low"<<endl;
                 tid = LowQueue.front()->Thread_ID;
                 LowQueue.erase(LowQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
@@ -147,6 +173,7 @@ extern "C"
         {
             if(!HighQueue.empty())
             {
+                //cerr<<"high"<<endl;
                 tid = HighQueue.front()->Thread_ID;
                 HighQueue.erase(HighQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
@@ -156,6 +183,7 @@ extern "C"
             }
             else if(!NormalQueue.empty())
             {
+                //cerr<<"n"<<endl;
                 tid = NormalQueue.front()->Thread_ID;
                 NormalQueue.erase(NormalQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
@@ -166,6 +194,7 @@ extern "C"
 
             else if(!LowQueue.empty())
             {
+                //cerr<<"low"<<endl;
                 tid = LowQueue.front()->Thread_ID;
                 LowQueue.erase(LowQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
@@ -176,6 +205,7 @@ extern "C"
 
             else
             {
+                //cerr<<"idl"<<endl;
                 CurrentThreadIndex = 1;
                 ThreadIDVector[1]->ThreadState = VM_THREAD_STATE_RUNNING;
                 MachineContextSwitch(&ThreadIDVector[Original]->context, &ThreadIDVector[1]->context);
@@ -198,6 +228,7 @@ extern "C"
             }
         }
 
+      
         //if current thread is running then put it into a ready queue
         if(ThreadIDVector[CurrentThreadIndex]->ThreadState == VM_THREAD_STATE_RUNNING)
         {
@@ -209,13 +240,6 @@ extern "C"
 
     TVMStatus VMStart(int tickms, int machinetickms, int argc, char *argv[])
 	{    
-<<<<<<< HEAD
-        //TMachineSignalState OldState;
-=======
-       // TMachineSignalState OldState;
->>>>>>> File
-        //MachineSuspendSignals(&OldState);
-
         //declare it
 		TVMMainEntry VMMain;
 
@@ -249,20 +273,10 @@ extern "C"
         {
             MachineEnableSignals();
             VMMain(argc, argv);
-<<<<<<< HEAD
-           // MachineResumeSignals(&OldState);
-=======
-          //  MachineResumeSignals(&OldState);
->>>>>>> File
             return VM_STATUS_SUCCESS;
         }
         else
         {
-<<<<<<< HEAD
-          //  MachineResumeSignals(&OldState);
-=======
-            //MachineResumeSignals(&OldState);
->>>>>>> File
             return VM_STATUS_FAILURE;
         }
 
@@ -343,7 +357,7 @@ extern "C"
         MachineFileOpen(filename, flags, mode, (TMachineFileCallback)FileCallback, ThreadIDVector[CurrentThreadIndex]);
 
         ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
-        WaitingQueue.push_back(ThreadIDVector[CurrentThreadIndex]);
+        //WaitingQueue.push_back(ThreadIDVector[CurrentThreadIndex]);
         scheduler();
 
         *filedescriptor = ThreadIDVector[CurrentThreadIndex]->file;
@@ -557,34 +571,220 @@ extern "C"
 
     }
 
-<<<<<<< HEAD
-/*
-    TVMStatus VMFileOpen(const char *filename, int flags, int mode, int *filedescriptor)
-    {
-        
-    }
-*/
+
 
 	TVMStatus VMMutexCreate(TVMMutexIDRef mutexref)
 	{
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
 		if(mutexref == NULL)
 		{
 			return VM_STATUS_ERROR_INVALID_PARAMETER;
 		}
-	
-		*mutexref =  MutexIDVector.size();
+
+    	*mutexref =  MutexIDVector.size();
+
+
+
 		MutexIDVector.push_back(new mutex);
 		
-		MutexIDVector[*mutexref]->MutexID;
-		
+		MutexIDVector[*mutexref]->MutexID = MutexIDVector.size()-1;
+        MutexIDVector[*mutexref]->unlocked = true;
+
+        MachineResumeSignals(&OldState);
 		return VM_STATUS_SUCCESS;
 	}
 
 	TVMStatus VMMutexAcquire(TVMMutexID mutex, TVMTick timeout)
 	{
-			
+	    TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+       
+        //cerr<<"called acquire: "<< mutex<<endl;
+
+        if(mutex >= MutexIDVector.size()||mutex < 0)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_ID;
+        }
+
+        if(timeout == VM_TIMEOUT_IMMEDIATE)
+        {
+            if(MutexIDVector[mutex]->OwnerID < 0)
+            {
+                MutexIDVector[mutex]->OwnerID = CurrentThreadIndex;
+                MachineResumeSignals(&OldState);
+                return VM_STATUS_SUCCESS;
+              // ThreadIDVector[CurrentThreadIndex]->ThreadState =VM_THREAD_STATE_READY;
+                //PlaceIntoQueue(CurrentThreadIndex);
+                //scheduler();
+            }
+            else
+            {
+                MachineResumeSignals(&OldState);
+                return VM_STATUS_FAILURE;
+            }
+        }
+        //mutex available
+        if(MutexIDVector[mutex]->unlocked)
+        {
+            MutexIDVector[mutex]->OwnerID = CurrentThreadIndex;
+            MutexIDVector[mutex]->unlocked =false;
+        }
+        //mutex unavailable place in waiting
+        else
+        {
+            //cerr<<"locked"<<endl;
+            ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+            ThreadIDVector[CurrentThreadIndex]->ticks = timeout;
+            SleepingQueue.push_back(ThreadIDVector[CurrentThreadIndex]);
+            PlaceIntoMutexQueue(CurrentThreadIndex,mutex);
+
+            scheduler();
+        
+
+           /* if(ThreadIDVector[CurrentThreadIndex]->ticks == 0)
+            {    
+                cerr<<"in the timeout zone"<<endl;
+                switch(ThreadIDVector[CurrentThreadIndex]->ThreadPriority)
+                {
+                    case VM_THREAD_PRIORITY_LOW:
+                        MutexIDVector[mutex]->LowPrio.erase(MutexIDVector[mutex]->LowPrio.begin()+ThreadIDVector[CurrentThreadIndex]->MutexPrioIndex);
+                        break;
+                    case VM_THREAD_PRIORITY_NORMAL:
+                        MutexIDVector[mutex]->NormalPrio.erase(MutexIDVector[mutex]->NormalPrio.begin()+ThreadIDVector[CurrentThreadIndex]->MutexPrioIndex);
+                        break;
+                    case VM_THREAD_PRIORITY_HIGH:
+                        MutexIDVector[mutex]->HighPrio.erase(MutexIDVector[mutex]->HighPrio.begin()+ThreadIDVector[CurrentThreadIndex]->MutexPrioIndex);
+                        break;
+                }
+
+                MachineResumeSignals(&OldState);
+                return VM_STATUS_FAILURE;
+            }*/
+        }
+
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;	
 	}
 
-=======
->>>>>>> File
+    TVMStatus VMMutexRelease(TVMMutexID mutex)
+    {
+
+        //cerr<<"called release "<<mutex<<endl;
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
+        if(!MutexIDVector[mutex]->HighPrio.empty())
+        {
+            //cerr<<"high not empty"<<endl;
+            MutexIDVector[mutex]->OwnerID = MutexIDVector[mutex]->HighPrio.front()->Thread_ID;
+            MutexIDVector[mutex]->HighPrio.erase(MutexIDVector[mutex]->HighPrio.begin());
+            ThreadIDVector[MutexIDVector[mutex]->OwnerID]->ThreadState = VM_THREAD_STATE_READY;
+            for(unsigned i = 0; i < SleepingQueue.size(); i++)
+            {
+                if(SleepingQueue[i]->Thread_ID == MutexIDVector[mutex]->OwnerID)
+                {
+                    SleepingQueue.erase(SleepingQueue.begin()+i);
+                    break;
+                }
+            }
+            PlaceIntoQueue(MutexIDVector[mutex]->OwnerID);
+
+            scheduler();
+        }
+        else if(!MutexIDVector[mutex]->NormalPrio.empty())
+        {
+            //cerr<<"normal"<<endl;
+            MutexIDVector[mutex]->OwnerID = MutexIDVector[mutex]->NormalPrio.front()->Thread_ID;
+            MutexIDVector[mutex]->NormalPrio.erase(MutexIDVector[mutex]->NormalPrio.begin());
+            ThreadIDVector[MutexIDVector[mutex]->OwnerID]->ThreadState = VM_THREAD_STATE_READY;
+            for(unsigned i = 0; i < SleepingQueue.size(); i++)
+            {
+                if(SleepingQueue[i]->Thread_ID == MutexIDVector[mutex]->OwnerID)
+                {
+                    SleepingQueue.erase(SleepingQueue.begin()+i);
+                    break;
+                }
+            }
+            PlaceIntoQueue(MutexIDVector[mutex]->OwnerID);
+            scheduler();
+        }
+        else if(!MutexIDVector[mutex]->LowPrio.empty())
+        {
+            //cerr<<"low"<<endl;
+            MutexIDVector[mutex]->OwnerID = MutexIDVector[mutex]->LowPrio.front()->Thread_ID;
+            MutexIDVector[mutex]->LowPrio.erase(MutexIDVector[mutex]->LowPrio.begin());
+            ThreadIDVector[MutexIDVector[mutex]->OwnerID]->ThreadState = VM_THREAD_STATE_READY;
+            for(unsigned i = 0; i < SleepingQueue.size(); i++)
+            {
+                if(SleepingQueue[i]->Thread_ID == MutexIDVector[mutex]->OwnerID)
+                {
+                    SleepingQueue.erase(SleepingQueue.begin()+i);
+                    break;
+                }
+            }
+            PlaceIntoQueue(MutexIDVector[mutex]->OwnerID);
+            scheduler();
+        }
+
+        else
+        {
+            //cerr<<"free "<<mutex<<endl;
+            MutexIDVector[mutex]->unlocked = true;
+            scheduler();
+        }
+
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;
+
+    }
+
+    TVMStatus VMMutexDelete(TVMMutexID mutex)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
+        if(mutex < 0|| mutex > MutexIDVector.size()-1)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_ID;
+        }
+
+        if(MutexIDVector[mutex]->OwnerID < 0)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_STATE;
+        }
+
+        MutexIDVector.erase(MutexIDVector.begin() + mutex);
+
+        return VM_STATUS_SUCCESS;
+    }
+
+    TVMStatus VMMutexQuery(TVMMutexID mutex, TVMThreadIDRef ownerref)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+        
+        if(mutex < 0|| mutex > MutexIDVector.size()-1)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_ID;
+        }
+
+        if(ownerref == NULL)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+        *ownerref = MutexIDVector[mutex]->OwnerID;
+
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;
+    }
+
+
 }
