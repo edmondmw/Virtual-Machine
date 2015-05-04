@@ -293,6 +293,12 @@ extern "C"
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
 
+		if(tick == VM_TIMEOUT_IMMEDIATE)
+		{
+			ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_READY;
+			PlaceIntoQueue(CurrentThreadIndex);
+			scheduler();
+		}
         //add if VM_TIMEOUT_ERROR
         ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
 
@@ -305,6 +311,7 @@ extern "C"
         MachineResumeSignals(&OldState);
 
         return VM_STATUS_SUCCESS;
+		
     }
 
 
@@ -742,6 +749,11 @@ extern "C"
 
         else
         {
+			if(mutex >= MutexIDVector.size() || mutex < 0)
+			{
+				MachineResumeSignals(&OldState);
+				return VM_STATUS_ERROR_INVALID_STATE;
+			}
             //cerr<<"free "<<mutex<<endl;
             MutexIDVector[mutex]->unlocked = true;
             scheduler();
@@ -755,7 +767,7 @@ extern "C"
             MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_ID;
         }
-		else if((mutex >= MutexIDVector.size() || mutex < 0) && MutexIDVector[mutex]->OwnerID != VM_THREAD_STATE_RUNNING)
+		else if((mutex >= MutexIDVector.size() || mutex < 0) && MutexIDVector[mutex]->unlocked != VM_THREAD_STATE_RUNNING)
 		{
 			MachineResumeSignals(&OldState);
 			return VM_STATUS_ERROR_INVALID_STATE;
@@ -795,7 +807,11 @@ extern "C"
             MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_ID;
         }
-
+		if(MutexIDVector[mutex]->unlocked)
+		{
+			MachineResumeSignals(&OldState);
+			return VM_THREAD_ID_INVALID;
+		}
         if(ownerref == NULL)
         {
             MachineResumeSignals(&OldState);
