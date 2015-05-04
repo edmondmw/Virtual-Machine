@@ -694,6 +694,12 @@ extern "C"
         TMachineSignalState OldState;
         MachineSuspendSignals(&OldState);
 
+		if(mutex >= MutexIDVector.size()||mutex < 0)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_ID;
+        }
+
         if(!MutexIDVector[mutex]->HighPrio.empty())
         {
             //cerr<<"high not empty"<<endl;
@@ -761,12 +767,6 @@ extern "C"
 
         MachineResumeSignals(&OldState);
         return VM_STATUS_SUCCESS;
-
-		if(mutex >= MutexIDVector.size()||mutex < 0)
-        {
-            MachineResumeSignals(&OldState);
-            return VM_STATUS_ERROR_INVALID_ID;
-        }
 		
     }
 
