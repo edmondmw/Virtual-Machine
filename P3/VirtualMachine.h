@@ -26,8 +26,8 @@ extern "C" {
 #define VM_MUTEX_ID_INVALID                     ((TVMMutexID)-1)
                                                 
 #define VM_TIMEOUT_INFINITE                     ((TVMTick)0)
-#define VM_TIMEOUT_IMMEDIATE                    ((TVMTick)-1)
-
+#define VM_TIMEOUT_IMMEDIATE                    ((TVMTick)-1)       
+                                   
 typedef unsigned int TVMMemorySize, *TVMMemorySizeRef;
 typedef unsigned int TVMStatus, *TVMStatusRef;
 typedef unsigned int TVMTick, *TVMTickRef;
@@ -35,11 +35,15 @@ typedef unsigned int TVMThreadID, *TVMThreadIDRef;
 typedef unsigned int TVMMutexID, *TVMMutexIDRef;
 typedef unsigned int TVMThreadPriority, *TVMThreadPriorityRef;  
 typedef unsigned int TVMThreadState, *TVMThreadStateRef;  
+typedef unsigned int TVMMemoryPoolID, *TVMMemoryPoolIDRef;
+
+extern const TVMMemoryPoolID VM_MEMORY_POOL_ID_SYSTEM;
+#define VM_MEMORY_POOL_ID_INVALID               ((TVMMemoryPoolID)-1)
 
 typedef void (*TVMMainEntry)(int, char*[]);
 typedef void (*TVMThreadEntry)(void *);
 
-TVMStatus VMStart(int tickms, int machinetickms, int argc, char *argv[]);
+TVMStatus VMStart(int tickms, TVMMemorySize heapsize, int machinetickms, TVMMemorySize sharedsize, int argc, char *argv[]);
 
 TVMStatus VMThreadCreate(TVMThreadEntry entry, void *param, TVMMemorySize memsize, TVMThreadPriority prio, TVMThreadIDRef tid);
 TVMStatus VMThreadDelete(TVMThreadID thread);
@@ -48,6 +52,12 @@ TVMStatus VMThreadTerminate(TVMThreadID thread);
 TVMStatus VMThreadID(TVMThreadIDRef threadref);
 TVMStatus VMThreadState(TVMThreadID thread, TVMThreadStateRef stateref);
 TVMStatus VMThreadSleep(TVMTick tick);
+
+TVMStatus VMMemoryPoolCreate(void *base, TVMMemorySize size, TVMMemoryPoolIDRef memory);
+TVMStatus VMMemoryPoolDelete(TVMMemoryPoolID memory);
+TVMStatus VMMemoryPoolQuery(TVMMemoryPoolID memory, TVMMemorySizeRef bytesleft);
+TVMStatus VMMemoryPoolAllocate(TVMMemoryPoolID memory, TVMMemorySize size, void **pointer);
+TVMStatus VMMemoryPoolDeallocate(TVMMemoryPoolID memory, void *pointer);       
 
 TVMStatus VMMutexCreate(TVMMutexIDRef mutexref);
 TVMStatus VMMutexDelete(TVMMutexID mutex);
