@@ -40,8 +40,23 @@ extern "C"
 
 	}mutex;
 
+    typedef struct 
+    {
+
+        TVMMemorySize MemoryPoolSize;
+        TVMMemoryPoolID PoolID;
+        //pointer to the base of memory array
+        uint8_t* base;
+        int length;
+
+    }MemoryPool;
+
+    const TVMMemoryPoolID VM_MEMORY_POOL_ID_SYSTEM = 0;
+
     volatile TVMThreadID CurrentThreadIndex;
 	
+
+    vector<MemoryPool*> MemoryIDVector;
 	vector<mutex*> MutexIDVector;
     vector<TCB*> ThreadIDVector;
     vector<TCB*> LowQueue;
@@ -238,7 +253,7 @@ extern "C"
         scheduler();
     }
 
-    TVMStatus VMStart(int tickms, int machinetickms, int argc, char *argv[])
+    TVMStatus VMStart(int tickms, TVMMemorySize heapsize, int machinetickms, TVMMemorySize sharedsize, int argc, char *argv[])
 	{    
         //declare it
 		TVMMainEntry VMMain;
@@ -246,8 +261,14 @@ extern "C"
         //load the module
 		VMMain = VMLoadModule(argv[0]);	
 
+        //add sharedsize to machine initialize
         MachineInitialize(machinetickms);
         MachineRequestAlarm(tickms*1000,(TMachineAlarmCallback)AlarmRequestCallback,NULL);
+
+        //create the system memory pool
+        MemoryIDVector.push_back(new MemoryPool);
+        MemoryIDVector[VM_MEMORY_POOL_ID_SYSTEM]->PoolID = 0;
+        MemoryIDVector[VM_MEMORY_POOL_ID_SYSTEM]->MemoryPoolSize = heapsize;
 
         //create main thread
         ThreadIDVector.push_back(new TCB);
@@ -816,5 +837,22 @@ extern "C"
         return VM_STATUS_SUCCESS;
     }
 
+    TVMStatus VMMemoryPoolCreate(void* base, TVMMemorySize size, TVMMemoryPoolIDRef memory)
+    {
+        if(base == NULL||memory == NULL|| size == 0)
+        {
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+        *memory = MemoryIDVector.size();
+        MemoryIDVector.push_back(new MemoryPool);
+
+        MemoryIDVector[*memory]->PoolID = *memory;
+        MemoryIDVector[*memory]->base = (uint8_t*)base;
+        MemoryIDVector[*memory]->MemoryPoolSize = size;
+        //other stuff for later
+
+        return VM_STATUS_SUCCESS;
+    }
 
 }
