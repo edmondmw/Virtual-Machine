@@ -755,11 +755,7 @@ extern "C"
 
         else
         {
-			if(mutex >= MutexIDVector.size() || mutex < 0)
-			{
-				MachineResumeSignals(&OldState);
-				return VM_STATUS_ERROR_INVALID_STATE;
-			}
+
             //cerr<<"free "<<mutex<<endl;
             MutexIDVector[mutex]->unlocked = true;
             scheduler();
