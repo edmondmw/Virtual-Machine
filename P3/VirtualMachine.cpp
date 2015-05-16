@@ -44,6 +44,7 @@ extern "C"
     typedef struct 
     {
         uint8_t *address;
+        TVMMemorySize length; 
     }block;
 
     typedef struct 
