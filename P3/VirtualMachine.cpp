@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 #include <queue>
+#include <list>
 
 using namespace std;
 
@@ -42,19 +43,27 @@ extern "C"
 
     typedef struct 
     {
+        uint8_t *address;
+    }block;
+
+    typedef struct 
+    {
 
         TVMMemorySize MemoryPoolSize;
         TVMMemoryPoolID PoolID;
         //pointer to the base of memory array
         uint8_t* base;
         int length;
+        //make free space stuff
+        TVMMemorySize FreeSpace;
+        list<block*> FreeList;
+        list<block*> AllocatedList;
 
     }MemoryPool;
 
     const TVMMemoryPoolID VM_MEMORY_POOL_ID_SYSTEM = 0;
 
     volatile TVMThreadID CurrentThreadIndex;
-	
 
     vector<MemoryPool*> MemoryIDVector;
 	vector<mutex*> MutexIDVector;
@@ -154,8 +163,8 @@ extern "C"
                 //cerr<<"running n"<<endl;
                 tid = NormalQueue.front()->Thread_ID;
                 NormalQueue.erase(NormalQueue.begin());
-                ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
-                CurrentThreadIndex = tid;
+                ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING
+;                CurrentThreadIndex = tid;
                 ThreadIDVector[Original]->ThreadState = VM_THREAD_STATE_READY;
                 PlaceIntoQueue(Original);
                 MachineContextSwitch(&(ThreadIDVector[Original]->context),&(ThreadIDVector[tid]->context));
@@ -265,11 +274,14 @@ extern "C"
         MachineInitialize(machinetickms);
         MachineRequestAlarm(tickms*1000,(TMachineAlarmCallback)AlarmRequestCallback,NULL);
 
-        //create the system memory pool
-        MemoryIDVector.push_back(new MemoryPool);
-        MemoryIDVector[VM_MEMORY_POOL_ID_SYSTEM]->PoolID = 0;
-        MemoryIDVector[VM_MEMORY_POOL_ID_SYSTEM]->MemoryPoolSize = heapsize;
+        uint8_t* aBase = new uint8_t[heapsize];
 
+        TVMMemoryPoolID id  = 12323;
+        VMMemoryPoolCreate(aBase, heapsize, &id);
+
+
+
+        //create the system memory pool
         //create main thread
         ThreadIDVector.push_back(new TCB);
         ThreadIDVector[0]->Thread_ID = 0;
@@ -837,6 +849,11 @@ extern "C"
         return VM_STATUS_SUCCESS;
     }
 
+    bool compareBlockAddresses(const block* block1, const block* block2)
+    {
+        return ( block1->address < block2->address);
+    }
+
     TVMStatus VMMemoryPoolCreate(void* base, TVMMemorySize size, TVMMemoryPoolIDRef memory)
     {
         if(base == NULL||memory == NULL|| size == 0)
@@ -851,8 +868,99 @@ extern "C"
         MemoryIDVector[*memory]->base = (uint8_t*)base;
         MemoryIDVector[*memory]->MemoryPoolSize = size;
         //other stuff for later
+        block *ablock = new block;
+        ablock->length = size;
+        ablock->address = (uint8_t*)base;
+        MemoryIDVector[*memory]->FreeList.push_back(ablock);
+        MemoryIDVector[*memory]->FreeSpace = size;
+
 
         return VM_STATUS_SUCCESS;
     }
 
+    TVMStatus VMMemoryPoolAllocate(TVMMemoryPoolID memory, TVMMemorySize size, void **pointer)
+    {
+        if(memory < 0 || memory >= MemoryIDVector.size() || size == 0 || pointer == NULL)
+        {
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+        if(MemoryIDVector[memory]->FreeSpace < size)
+        {
+            return VM_STATUS_ERROR_INSUFFICIENT_RESOURCES;
+        }
+        //round up to nearest multiple of 64
+        if((size % 64) > 0)
+        {
+            size = (size+64)/64*64;
+        }
+
+        //check first block with enough space,  set the new base, place into allocate
+        list<block*>::iterator it;
+        for(it = MemoryIDVector[memory]->FreeList.begin(); it != MemoryIDVector[memory]->FreeList.end(); it++)
+        {
+            //If the free space block has enough size then allocate
+            if((*it)->length >= size)
+            {
+                block* aBlock = new block;
+                aBlock->address = (*it)->address;
+                aBlock->length = size;
+                *pointer = (*it)->address;
+                MemoryIDVector[memory]->AllocatedList.push_back(aBlock);
+                
+                //If size != length, cut the block 
+                if(size != (*it)->length)
+                {
+                    //reduce the length
+                    (*it)->length -= size;
+                    //new base
+                    (*it)->address += size;
+
+                }
+                //if the allocated size is equal to the length of the block's free space
+                //we need to just erase the block fromt he freelist
+                else
+                {
+                    it = MemoryIDVector[memory]->FreeList.erase(it);
+                    //it--;
+                }
+
+                MemoryIDVector[memory]->FreeSpace -= size;
+                MemoryIDVector[memory]->FreeList.sort(compareBlockAddresses);
+                break;
+            }//if enough space
+        }
+
+        return VM_STATUS_SUCCESS;
+    }
+
+    TVMStatus VMMemoryPoolDeallocate(TVMMemoryPoolID memory, void *pointer)
+    {
+        if(memory < 0 || memory >= MemoryIDVector.size())
+        {
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+        return VM_STATUS_SUCCESS;
+    }
+    
+    TVMStatus VMMemoryPoolDelete(TVMMemoryPoolID memory)
+    {
+        if(memory < 0 || memory >= MemoryIDVector.size())
+        {
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+        return VM_STATUS_SUCCESS;
+    }
+
+    TVMStatus VMMemoryPoolQuery(TVMMemoryPoolID memory, TVMThreadIDRef bytesleft)
+    {
+        if(memory < 0 || memory >= MemoryIDVector.size() || bytesleft == NULL)
+        {
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+        return VM_STATUS_SUCCESS;
+    }
 }
