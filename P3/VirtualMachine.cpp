@@ -101,18 +101,15 @@ extern "C"
     {
             switch(ThreadIDVector[thread]->ThreadPriority)
             {
-                case VM_THREAD_PRIORITY_LOW:    
-                //cerr<<"place in low"<<endl;
+                case VM_THREAD_PRIORITY_LOW:                    
                     ThreadIDVector[thread]->MutexPrioIndex = MutexIDVector[mutex]->LowPrio.size();
                     MutexIDVector[mutex]->LowPrio.push_back(ThreadIDVector[thread]);
                     break;
                 case VM_THREAD_PRIORITY_NORMAL:
-                //cerr<<"place into norm"<<endl;
                     ThreadIDVector[thread]->MutexPrioIndex = MutexIDVector[mutex]->NormalPrio.size();
                     MutexIDVector[mutex]->NormalPrio.push_back(ThreadIDVector[thread]);
                     break;
                 case VM_THREAD_PRIORITY_HIGH:
-                    //cerr<<"place into high"<<endl;
                     ThreadIDVector[thread]->MutexPrioIndex = MutexIDVector[mutex]->HighPrio.size();
                     MutexIDVector[mutex]->HighPrio.push_back(ThreadIDVector[thread]);
                     break;
@@ -174,7 +171,6 @@ extern "C"
 
             else if(!LowQueue.empty()&&(VM_THREAD_PRIORITY_LOW > ThreadIDVector[CurrentThreadIndex]->ThreadPriority))
             {
-                //cerr<<"running low"<<endl;
                 tid = LowQueue.front()->Thread_ID;
                 LowQueue.erase(LowQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
@@ -886,10 +882,10 @@ extern "C"
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
 
-        if(MemoryIDVector[memory]->FreeSpace < size)
+       /* if(MemoryIDVector[memory]->FreeSpace < size)
         {
             return VM_STATUS_ERROR_INSUFFICIENT_RESOURCES;
-        }
+        }*/
         //round up to nearest multiple of 64
         if((size % 64) > 0)
         {
@@ -926,13 +922,33 @@ extern "C"
                     //it--;
                 }
 
-                MemoryIDVector[memory]->FreeSpace -= size;
+                //MemoryIDVector[memory]->FreeSpace -= size;
                 MemoryIDVector[memory]->FreeList.sort(compareBlockAddresses);
-                break;
+                return VM_STATUS_SUCCESS;
             }//if enough space
         }
 
-        return VM_STATUS_SUCCESS;
+        return VM_STATUS_ERROR_INSUFFICIENT_RESOURCES;
+    }
+
+    //iterate through the memory pool's free list and merge any possible blocks
+    void MergeFreeBlocks(TVMMemoryPoolID memory)
+    {
+        list<block*>::iterator it1;
+        list<block*>::iterator it2 = MemoryIDVector[memory]->FreeList.begin();
+        it2++;
+
+        for(it1 = MemoryIDVector[memory]->FreeList.begin(); it2 != MemoryIDVector[memory]->FreeList.end();it1++,it2++)
+        {
+            //if the address of the next block is equal to the address of current block + length then it is continuous
+            if(((*it1)->address+(*it1)->length) ==((*it2)->address))
+            {
+                (*it1)->length += (*(it2))->length;
+                it2 = MemoryIDVector[memory]->FreeList.erase(it2);
+                it1--;
+                it2--; 
+            }
+        }
     }
 
     TVMStatus VMMemoryPoolDeallocate(TVMMemoryPoolID memory, void *pointer)
@@ -940,6 +956,24 @@ extern "C"
         if(memory < 0 || memory >= MemoryIDVector.size())
         {
             return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+        list<block*>::iterator it;
+        //search the allocated list for the block we want to deallocate
+        for(it = MemoryIDVector[memory]->AllocatedList.begin(); it != MemoryIDVector[memory]->AllocatedList.end(); it++)
+        {
+            if((*it)->address == pointer)
+            {
+                //remove from allocated, place into free, sort, iterate through free and merge
+                block* aBlock = new block;
+                aBlock->address = (*it)->address;
+                aBlock->length = (*it)->length;
+                MemoryIDVector[memory]->FreeList.push_back(aBlock);
+                MemoryIDVector[memory]->FreeList.sort(compareBlockAddresses);
+                MemoryIDVector[memory]->AllocatedList.erase(it);
+                MergeFreeBlocks(memory);
+                break;
+            }
         }
 
         return VM_STATUS_SUCCESS;
