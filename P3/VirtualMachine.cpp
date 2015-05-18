@@ -27,8 +27,7 @@ extern "C"
         TVMMutexID MyMutex;
         int MutexPrioIndex;
         int SleepingIndex;
-// Possibly hold a list of held mutexes
-
+        TVMMemorySize memsize;
     }TCB; 
 
 	typedef struct
@@ -75,9 +74,11 @@ extern "C"
     vector<TCB*> LowQueue;
     vector<TCB*> NormalQueue;
     vector<TCB*> HighQueue;
-  //  vector<TCB*> WaitingQueue;
+    vector<TCB*> WaitingQueue;
     vector<TCB*> SleepingQueue;
-
+    vector<TCB*> HighWaitQueue;
+    vector<TCB*> NormalWaitQueue;
+    vector<TCB*> LowWaitQueue;
 
     TVMMainEntry VMLoadModule(const char *module);
 
@@ -86,7 +87,6 @@ extern "C"
     void IdleEntry(void *param)
     {
         MachineEnableSignals();
-        //cerr<<"in idle"<<endl;
         while(true)
         {
         }
@@ -138,14 +138,112 @@ extern "C"
         }
     }
 
+    void PlaceIntoWaitQueue(TVMThreadID thread)
+    {
+        if(ThreadIDVector[thread]->ThreadState == VM_THREAD_STATE_WAITING)
+        {
+            //cerr<<endl<<"enter wait queu "<<thread<<endl;
+            switch(ThreadIDVector[thread]->ThreadPriority)
+            {
+                case VM_THREAD_PRIORITY_LOW:    
+                    LowWaitQueue.push_back(ThreadIDVector[thread]);
+                    break;
+                case VM_THREAD_PRIORITY_NORMAL:
+                    NormalWaitQueue.push_back(ThreadIDVector[thread]);
+                    break;
+                case VM_THREAD_PRIORITY_HIGH:
+                    HighWaitQueue.push_back(ThreadIDVector[thread]);
+                    break;
+            }
+        }
+    }
+
+    void WaitToReady()
+    {
+        TVMThreadID tid;
+        if(!HighWaitQueue.empty())
+        {
+            tid = HighWaitQueue.front()->Thread_ID;
+            HighWaitQueue.erase(HighWaitQueue.begin());
+            ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_READY;
+            PlaceIntoQueue(tid);
+        }
+        else if(!NormalWaitQueue.empty())
+        {
+            tid = NormalWaitQueue.front()->Thread_ID;
+            NormalWaitQueue.erase(NormalWaitQueue.begin());
+            ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_READY;
+            //cerr<<endl<<"exit wait queue "<<tid<<endl;
+            PlaceIntoQueue(tid);
+        }
+        else if(!LowWaitQueue.empty())
+        {
+            tid = LowWaitQueue.front()->Thread_ID;
+            LowWaitQueue.erase(LowWaitQueue.begin());
+            ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_READY;
+            PlaceIntoQueue(tid);
+        }
+    }
+
+    //Check wait queues to see if there is currently enough free shared space to run the waiting threads
+    void CheckForFreeSharedSpace()
+    {
+        TVMThreadID tid;
+        list<block*>::iterator it;
+
+        if(!HighWaitQueue.empty())
+        {
+            for(it = MemoryIDVector[VM_MEMORY_POOL_ID_SHARED]->FreeList.begin(); it != MemoryIDVector[VM_MEMORY_POOL_ID_SHARED]->FreeList.end();it++)
+            {
+                if((*it)->length >= HighWaitQueue.front()->memsize)
+                {
+                    tid = HighWaitQueue.front()->Thread_ID;
+                    HighWaitQueue.erase(HighWaitQueue.begin());
+                    ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_READY;
+                    PlaceIntoQueue(tid);
+                    //cerr<<endl<<"exit wait queue"<<tid<<endl;
+                }
+            }
+        }
+        else if(!NormalWaitQueue.empty())
+        {
+            for(it = MemoryIDVector[VM_MEMORY_POOL_ID_SHARED]->FreeList.begin(); it != MemoryIDVector[VM_MEMORY_POOL_ID_SHARED]->FreeList.end();it++)
+            {
+                if((*it)->length >= NormalWaitQueue.front()->memsize)
+                {
+                    tid = NormalWaitQueue.front()->Thread_ID;
+                    NormalWaitQueue.erase(NormalWaitQueue.begin());
+                    ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_READY;
+                    PlaceIntoQueue(tid);
+                    //cerr<<endl<<"exit wait queue"<<tid<<endl;
+                }
+            }
+        }
+        else if(!LowWaitQueue.empty())
+        {
+            for(it = MemoryIDVector[VM_MEMORY_POOL_ID_SHARED]->FreeList.begin(); it != MemoryIDVector[VM_MEMORY_POOL_ID_SHARED]->FreeList.end();it++)
+            {
+                if((*it)->length >= LowWaitQueue.front()->memsize)
+                {
+                    tid = LowWaitQueue.front()->Thread_ID;
+                    LowWaitQueue.erase(LowWaitQueue.begin());
+                    ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_READY;
+                    PlaceIntoQueue(tid);
+                    //cerr<<endl<<"exit wait queue"<<tid<<endl;
+                }
+            }
+        }
+        
+    }
+
     void scheduler()
     {
-        //cerr<<"in sched"<<endl;
         TVMThreadID tid;
         TVMThreadID Original = CurrentThreadIndex;
-
+        //cerr<<"called sched "<< CurrentThreadIndex<< endl;
         if(ThreadIDVector[CurrentThreadIndex]->ThreadState == VM_THREAD_STATE_RUNNING)
         {
+            //cerr<<"in here"<<endl;
             if(!HighQueue.empty()&&(VM_THREAD_PRIORITY_HIGH > ThreadIDVector[CurrentThreadIndex]->ThreadPriority))
             {
                 tid = HighQueue.front()->Thread_ID;
@@ -154,20 +252,19 @@ extern "C"
                 CurrentThreadIndex = tid;
                 ThreadIDVector[Original]->ThreadState = VM_THREAD_STATE_READY;
                 PlaceIntoQueue(Original);
-                //cerr<<"running high"<<endl;
 
                 MachineContextSwitch(&ThreadIDVector[Original]->context,&ThreadIDVector[tid]->context);
 
             }
             else if(!NormalQueue.empty()&&(VM_THREAD_PRIORITY_NORMAL > ThreadIDVector[CurrentThreadIndex]->ThreadPriority))
             {
-                //cerr<<"running n"<<endl;
                 tid = NormalQueue.front()->Thread_ID;
                 NormalQueue.erase(NormalQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
                 CurrentThreadIndex = tid;
                 ThreadIDVector[Original]->ThreadState = VM_THREAD_STATE_READY;
                 PlaceIntoQueue(Original);
+                //cerr<<endl<<"switch to "<< CurrentThreadIndex<<endl;
                 MachineContextSwitch(&(ThreadIDVector[Original]->context),&(ThreadIDVector[tid]->context));
 
             }
@@ -197,7 +294,6 @@ extern "C"
         {
             if(!HighQueue.empty())
             {
-                //cerr<<"high"<<endl;
                 tid = HighQueue.front()->Thread_ID;
                 HighQueue.erase(HighQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
@@ -207,18 +303,17 @@ extern "C"
             }
             else if(!NormalQueue.empty())
             {
-                //cerr<<"n"<<endl;
                 tid = NormalQueue.front()->Thread_ID;
                 NormalQueue.erase(NormalQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
                 CurrentThreadIndex = tid;
+                //cerr<<endl<<"switch to "<< CurrentThreadIndex<<endl;
                 MachineContextSwitch(&ThreadIDVector[Original]->context,&ThreadIDVector[tid]->context);
 
             }
 
             else if(!LowQueue.empty())
             {
-                //cerr<<"low"<<endl;
                 tid = LowQueue.front()->Thread_ID;
                 LowQueue.erase(LowQueue.begin());
                 ThreadIDVector[tid]->ThreadState = VM_THREAD_STATE_RUNNING;
@@ -229,9 +324,9 @@ extern "C"
 
             else
             {
-                //cerr<<"idl"<<endl;
                 CurrentThreadIndex = 1;
                 ThreadIDVector[1]->ThreadState = VM_THREAD_STATE_RUNNING;
+                //cerr<<"go to idle"<<endl;
                 MachineContextSwitch(&ThreadIDVector[Original]->context, &ThreadIDVector[1]->context);
             }
         }
@@ -290,7 +385,6 @@ extern "C"
         {
             size = (size+64)/64*64;
         }
-
         //check first block with enough space,  set the new base, place into allocate
         list<block*>::iterator it;
         for(it = MemoryIDVector[memory]->FreeList.begin(); it != MemoryIDVector[memory]->FreeList.end(); it++)
@@ -318,7 +412,6 @@ extern "C"
                 else
                 {
                     it = MemoryIDVector[memory]->FreeList.erase(it);
-                    //it--;
                 }
 
                 MemoryIDVector[memory]->FreeSpace -= size;
@@ -449,11 +542,18 @@ extern "C"
 	{    
         //declare it
 		TVMMainEntry VMMain;
-
         //load the module
 		VMMain = VMLoadModule(argv[0]);	
 
-        void* sharedBase = MachineInitialize(machinetickms,sharedsize);
+        TVMMemorySize altsharedsize = sharedsize;
+
+        //round up to nearest multiple of 4096
+        if((sharedsize % 4096) > 0)
+        {
+            altsharedsize = (sharedsize + 4096)/4096*4096;
+        }
+
+        void* sharedBase = MachineInitialize(machinetickms, altsharedsize);
         MachineRequestAlarm(tickms*1000,(TMachineAlarmCallback)AlarmRequestCallback,NULL);
 
         uint8_t* aBase = new uint8_t[heapsize];
@@ -461,7 +561,7 @@ extern "C"
         TVMMemoryPoolID id  = 12323;
         VMMemoryPoolCreate(aBase, heapsize, &id);
 
-        VMMemoryPoolCreate((uint8_t*)sharedBase, sharedsize, &id);
+        VMMemoryPoolCreate((uint8_t*)sharedBase, altsharedsize, &id);
 
         //create the system memory pool
         //create main thread
@@ -536,59 +636,112 @@ extern "C"
         //ThreadIDVector[MyTCB->Thread_ID]->file = result;
         MyTCB->file = result;
         MyTCB->ThreadState = VM_THREAD_STATE_READY;
+        //cerr<<endl<<"callback "<< MyTCB->Thread_ID <<endl;
 
         PlaceIntoQueue(MyTCB->Thread_ID);
         scheduler();
     }
 
+
     TVMStatus VMFileWrite(int filedescriptor, void *data, int *length)
     {
         TMachineSignalState OldState;
         MachineSuspendSignals(&OldState);
-
+        cerr<<endl<<"enter write "<<CurrentThreadIndex<<endl;
         if(data == NULL || length == NULL)
         {
             MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
+        int LengthRemaining = *length;
+        int CurrentLength;
+        int it = 0;
+        char* FullString = (char *)data;
 
-        int temp = *length;
-        int temp2;
+        ThreadIDVector[CurrentThreadIndex]->memsize = *length;
 
-        //while loop to make sure data transfer is in 512 byte segments
-        while(temp > 0)
+        void *shared = NULL;      
+      /*  
+        if(*length > 512)
         {
-            if(temp > 512)
+            while(VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, 512, &shared) == VM_STATUS_ERROR_INSUFFICIENT_RESOURCES)
             {
-                temp -= 512;
-                temp2 = 512;
+                ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+                PlaceIntoWaitQueue(CurrentThreadIndex);
+                scheduler();
+            }    
+        }
+        else
+        {
+            while(VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, *length, &shared) == VM_STATUS_ERROR_INSUFFICIENT_RESOURCES)
+            {
+                ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+                PlaceIntoWaitQueue(CurrentThreadIndex);
+                scheduler();
+            }
+        }
+        //after while loop check if enough space for next thing to run
+        CheckForFreeSharedSpace();
+        scheduler();
+*/
+        while(VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, 512, &shared) == VM_STATUS_ERROR_INSUFFICIENT_RESOURCES)
+        {
+            ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+            PlaceIntoWaitQueue(CurrentThreadIndex);
+            scheduler();
+        }    
+        //while loop to make sure data transfer is in 512 byte segments
+        while(LengthRemaining > 0)
+        {
+            if(LengthRemaining > 512)
+            {
+                LengthRemaining -= 512;
+                CurrentLength = 512;
             }
             else
             {
-                temp2 = temp;
-                temp = 0;
+                CurrentLength = LengthRemaining;
+                LengthRemaining = 0;
             }
+           /* char tempString[CurrentLength];
 
-            void *shared;      
-            VMMemoryPoolAllocate(1, (TVMMemorySize)temp2, &shared);
-            memcpy(shared,data,*length);
+            for(int i = 0; i < CurrentLength; i++, it++)
+            {
+                tempString[i] = FullString[it];
+            }*/
 
-            MachineFileWrite(filedescriptor, shared, temp2 , FileCallback, ThreadIDVector[CurrentThreadIndex]);
+           /* while(VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, CurrentLength, &shared) == VM_STATUS_ERROR_INSUFFICIENT_RESOURCES)
+            {
+                ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+                PlaceIntoWaitQueue(CurrentThreadIndex);
+                scheduler();
+            }  */  
+
+            memcpy(shared,(char*)data + it,CurrentLength);
+            it+=CurrentLength;
+            MachineFileWrite(filedescriptor, shared, CurrentLength, FileCallback, ThreadIDVector[CurrentThreadIndex]);
+            //cerr<<endl<<"CURRENT THREAD WAITING FOR FILEWRITE "<<CurrentThreadIndex<<endl;
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
             scheduler();  
-
-            VMMemoryPoolDeallocate(VM_MEMORY_POOL_ID_SHARED, shared);
-
+            //cerr<<endl<<"CURRENT THREAD BACK "<<CurrentThreadIndex<<endl;
         }
+        VMMemoryPoolDeallocate(VM_MEMORY_POOL_ID_SHARED, shared);       
 
+        WaitToReady();
+        //ThreadIDVector[CurrentThreadIndex]->ThreadState=VM_THREAD_STATE_READY;
+        //PlaceIntoQueue(CurrentThreadIndex);
+        //CheckForFreeSharedSpace();
+        scheduler();
+        
         if(ThreadIDVector[CurrentThreadIndex]->file < 0)
         {
+            //cerr<<endl<<"exit write fail "<<CurrentThreadIndex<<endl;
             MachineResumeSignals(&OldState);
             return VM_STATUS_FAILURE;
         }
+        //cerr<<endl<<"exit write success"<< CurrentThreadIndex<< endl;
         MachineResumeSignals(&OldState);
         return VM_STATUS_SUCCESS;      
-
     }    
 
     TVMStatus VMFileOpen(const char *filename, int flags, int mode, int *filedescriptor)
@@ -671,7 +824,6 @@ extern "C"
                 temp = 0;
             }
 
-
             void *shared;      
             VMMemoryPoolAllocate(1, (TVMMemorySize)temp2, &shared);
 
@@ -679,8 +831,8 @@ extern "C"
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
             scheduler();  
 
-            memcpy(data,shared,temp2);
-            VMMemoryPoolDeallocate(VM_MEMORY_POOL_ID_SHARED,shared);
+            memcpy(data, shared, temp2);
+            VMMemoryPoolDeallocate(VM_MEMORY_POOL_ID_SHARED, shared);
 
             *length += ThreadIDVector[CurrentThreadIndex]->file;
         }//while(temp>0)
@@ -882,8 +1034,6 @@ extern "C"
 	    TMachineSignalState OldState;
         MachineSuspendSignals(&OldState);
        
-        //cerr<<"called acquire: "<< mutex<<endl;
-
         if(mutex >= MutexIDVector.size()||mutex < 0)
         {
             MachineResumeSignals(&OldState);
@@ -916,7 +1066,6 @@ extern "C"
         //mutex unavailable place in waiting
         else
         {
-            //cerr<<"locked"<<endl;
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
             ThreadIDVector[CurrentThreadIndex]->ticks = timeout;
             SleepingQueue.push_back(ThreadIDVector[CurrentThreadIndex]);
@@ -927,7 +1076,6 @@ extern "C"
 
            /* if(ThreadIDVector[CurrentThreadIndex]->ticks == 0)
             {    
-                cerr<<"in the timeout zone"<<endl;
                 switch(ThreadIDVector[CurrentThreadIndex]->ThreadPriority)
                 {
                     case VM_THREAD_PRIORITY_LOW:
@@ -952,8 +1100,6 @@ extern "C"
 
     TVMStatus VMMutexRelease(TVMMutexID mutex)
     {
-
-        //cerr<<"called release "<<mutex<<endl;
         TMachineSignalState OldState;
         MachineSuspendSignals(&OldState);
 
@@ -965,7 +1111,6 @@ extern "C"
 
         if(!MutexIDVector[mutex]->HighPrio.empty())
         {
-            //cerr<<"high not empty"<<endl;
             MutexIDVector[mutex]->OwnerID = MutexIDVector[mutex]->HighPrio.front()->Thread_ID;
             MutexIDVector[mutex]->HighPrio.erase(MutexIDVector[mutex]->HighPrio.begin());
             ThreadIDVector[MutexIDVector[mutex]->OwnerID]->ThreadState = VM_THREAD_STATE_READY;
@@ -983,7 +1128,6 @@ extern "C"
         }
         else if(!MutexIDVector[mutex]->NormalPrio.empty())
         {
-            //cerr<<"normal"<<endl;
             MutexIDVector[mutex]->OwnerID = MutexIDVector[mutex]->NormalPrio.front()->Thread_ID;
             MutexIDVector[mutex]->NormalPrio.erase(MutexIDVector[mutex]->NormalPrio.begin());
             ThreadIDVector[MutexIDVector[mutex]->OwnerID]->ThreadState = VM_THREAD_STATE_READY;
@@ -1000,7 +1144,6 @@ extern "C"
         }
         else if(!MutexIDVector[mutex]->LowPrio.empty())
         {
-            //cerr<<"low"<<endl;
             MutexIDVector[mutex]->OwnerID = MutexIDVector[mutex]->LowPrio.front()->Thread_ID;
             MutexIDVector[mutex]->LowPrio.erase(MutexIDVector[mutex]->LowPrio.begin());
             ThreadIDVector[MutexIDVector[mutex]->OwnerID]->ThreadState = VM_THREAD_STATE_READY;
@@ -1018,8 +1161,6 @@ extern "C"
 
         else
         {
-
-            //cerr<<"free "<<mutex<<endl;
             MutexIDVector[mutex]->unlocked = true;
             scheduler();
         }
