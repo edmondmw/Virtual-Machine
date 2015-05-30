@@ -658,7 +658,7 @@ extern "C"
         int LengthRemaining = *length;
         int CurrentLength;
         int it = 0;
-        char* FullString = (char *)data;
+       // char* FullString = (char *)data;
 
         ThreadIDVector[CurrentThreadIndex]->memsize = *length;
 
