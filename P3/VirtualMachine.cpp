@@ -647,7 +647,7 @@ extern "C"
     {
         TMachineSignalState OldState;
         MachineSuspendSignals(&OldState);
-        cerr<<endl<<"enter write "<<CurrentThreadIndex<<endl;
+        //cerr<<endl<<"enter write "<<CurrentThreadIndex<<endl;
         if(data == NULL || length == NULL)
         {
             MachineResumeSignals(&OldState);
@@ -656,7 +656,7 @@ extern "C"
         int LengthRemaining = *length;
         int CurrentLength;
         int it = 0;
-        char* FullString = (char *)data;
+       // char* FullString = (char *)data;
 
         ThreadIDVector[CurrentThreadIndex]->memsize = *length;
 
