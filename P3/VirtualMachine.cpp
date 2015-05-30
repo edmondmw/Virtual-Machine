@@ -66,6 +66,8 @@ extern "C"
 
     const TVMMemoryPoolID VM_MEMORY_POOL_ID_SHARED = 1;
 
+    const TVMMemorySize MACHINE_MEMORY_LIMIT = 512;
+
     volatile TVMThreadID CurrentThreadIndex;
 
     vector<MemoryPool*> MemoryIDVector;
@@ -647,7 +649,7 @@ extern "C"
     {
         TMachineSignalState OldState;
         MachineSuspendSignals(&OldState);
-        cerr<<endl<<"enter write "<<CurrentThreadIndex<<endl;
+
         if(data == NULL || length == NULL)
         {
             MachineResumeSignals(&OldState);
@@ -661,30 +663,8 @@ extern "C"
         ThreadIDVector[CurrentThreadIndex]->memsize = *length;
 
         void *shared = NULL;      
-      /*  
-        if(*length > 512)
-        {
-            while(VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, 512, &shared) == VM_STATUS_ERROR_INSUFFICIENT_RESOURCES)
-            {
-                ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
-                PlaceIntoWaitQueue(CurrentThreadIndex);
-                scheduler();
-            }    
-        }
-        else
-        {
-            while(VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, *length, &shared) == VM_STATUS_ERROR_INSUFFICIENT_RESOURCES)
-            {
-                ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
-                PlaceIntoWaitQueue(CurrentThreadIndex);
-                scheduler();
-            }
-        }
-        //after while loop check if enough space for next thing to run
-        CheckForFreeSharedSpace();
-        scheduler();
-*/
-        while(VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, 512, &shared) == VM_STATUS_ERROR_INSUFFICIENT_RESOURCES)
+     
+        while(VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, MACHINE_MEMORY_LIMIT, &shared) == VM_STATUS_ERROR_INSUFFICIENT_RESOURCES)
         {
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
             PlaceIntoWaitQueue(CurrentThreadIndex);
@@ -693,54 +673,35 @@ extern "C"
         //while loop to make sure data transfer is in 512 byte segments
         while(LengthRemaining > 0)
         {
-            if(LengthRemaining > 512)
+            if(LengthRemaining > MACHINE_MEMORY_LIMIT)
             {
-                LengthRemaining -= 512;
-                CurrentLength = 512;
+                LengthRemaining -= MACHINE_MEMORY_LIMIT;
+                CurrentLength = MACHINE_MEMORY_LIMIT;
             }
             else
             {
                 CurrentLength = LengthRemaining;
                 LengthRemaining = 0;
             }
-           /* char tempString[CurrentLength];
-
-            for(int i = 0; i < CurrentLength; i++, it++)
-            {
-                tempString[i] = FullString[it];
-            }*/
-
-           /* while(VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, CurrentLength, &shared) == VM_STATUS_ERROR_INSUFFICIENT_RESOURCES)
-            {
-                ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
-                PlaceIntoWaitQueue(CurrentThreadIndex);
-                scheduler();
-            }  */  
 
             memcpy(shared,(char*)data + it,CurrentLength);
             it+=CurrentLength;
             MachineFileWrite(filedescriptor, shared, CurrentLength, FileCallback, ThreadIDVector[CurrentThreadIndex]);
-            //cerr<<endl<<"CURRENT THREAD WAITING FOR FILEWRITE "<<CurrentThreadIndex<<endl;
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
             scheduler();  
-            //cerr<<endl<<"CURRENT THREAD BACK "<<CurrentThreadIndex<<endl;
         }
+
         VMMemoryPoolDeallocate(VM_MEMORY_POOL_ID_SHARED, shared);       
 
         WaitToReady();
-        //ThreadIDVector[CurrentThreadIndex]->ThreadState=VM_THREAD_STATE_READY;
-        //PlaceIntoQueue(CurrentThreadIndex);
-        //CheckForFreeSharedSpace();
         scheduler();
         
         if(ThreadIDVector[CurrentThreadIndex]->file < 0)
         {
-            //cerr<<endl<<"exit write fail "<<CurrentThreadIndex<<endl;
             MachineResumeSignals(&OldState);
             return VM_STATUS_FAILURE;
         }
-        //cerr<<endl<<"exit write success"<< CurrentThreadIndex<< endl;
-        MachineResumeSignals(&OldState);
+            MachineResumeSignals(&OldState);
         return VM_STATUS_SUCCESS;      
     }    
 
@@ -765,7 +726,7 @@ extern "C"
 		}
 
         ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
-        //WaitingQueue.push_back(ThreadIDVector[CurrentThreadIndex]);
+
         scheduler();
 
         *filedescriptor = ThreadIDVector[CurrentThreadIndex]->file;
@@ -813,10 +774,10 @@ extern "C"
 
         while(temp > 0)
         {
-            if(temp > 512)
+            if(temp > MACHINE_MEMORY_LIMIT)
             {
-                temp -= 512;
-                temp2 = 512;
+                temp -= MACHINE_MEMORY_LIMIT;
+                temp2 = MACHINE_MEMORY_LIMIT;
             }
             else
             {
@@ -825,10 +786,10 @@ extern "C"
             }
 
             void *shared;      
-            VMMemoryPoolAllocate(1, (TVMMemorySize)temp2, &shared);
+            VMMemoryPoolAllocate(1, MACHINE_MEMORY_LIMIT, &shared);
 
-            MachineFileRead(filedescriptor, shared, temp2, FileCallback, ThreadIDVector[CurrentThreadIndex]);
-            ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+            MachineFileRead(filedescriptor, shared, temp2, FileCallback,TATE ThreadIDVector[CurrentThreadIndex]);
+            ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_S_WAITING;
             scheduler();  
 
             memcpy(data, shared, temp2);
