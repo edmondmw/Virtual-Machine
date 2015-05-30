@@ -89,9 +89,61 @@ extern "C"
     TVMMainEntry VMLoadModule(const char *module);
 
    void FileCallback(void* calldata, int result);
+/*
+   typedef struct 
+   {
+        string name;
+        uint16_t BytePerSector;
+        uint16_t SectorsPerCluster;
+        uint16_t ReservedSectors;
+        uint16_t FATCount;
+        uint16_t RootEntry;
+        uint16_t SectorCount16;
+        uint16_t Media;
+        uint16_t FATSize16;
+        uint16_t SectorPerTrack;
+        uint16_t HeadCount;
+        uint32_t HiddenSectorCount;
+        uint32_t SectorCount32;
+   }BPB;
 
+   void parse(uint8_t* TempPointer)
+   {
+        for(int i=3; i<11; i++)
+        {
+            BPB.name->push_back(BPB[i]);
+        }
+
+        BPB->BytePerSector = TempPointer[11] + (((uint16_t)TempPointer[11+1])<<8);
+        cerr << "BytePerSector: " << BPB->BytePerSector << endl;
+        BPB->SectorsPerCluster = TempPointer[13];
+        cerr << "SectorsPerCluster: " << BPB->SectorsPerCluster << endl;
+        BPB->ReservedSectors = TempPointer[14] + (((uint16_t)TempPointer[14+1])<<8);
+        cerr << "ReservedSectors: " << BPB->ReservedSectors << endl;
+        BPB->FATCount = TempPointer[16]; 
+        cerr << "FATCount: " << BPB->FATCount << endl;
+        BPB->RootEntry = TempPointer[17] + (((uint16_t)TempPointer[17+1])<<8);
+        cerr << "RootEntry: " << BPB->RootEntry << endl;
+        BPB->SectorCount16 = TempPointer[19] + (((uint16_t)TempPointer[19+1])<<8);
+        cerr << "SectorCount16: " << BPB->SectorCount16<< endl;
+        BPB->Media = TempPointer[21]; 
+        cerr << "Media: " << BPB->Media << endl;
+        BPB->FATSize16 = TempPointer[22] + (((uint16_t)TempPointer[22+1])<<8);
+        cerr << "FATSize16: " << BPB->FATSize16 << endl;
+        BPB->SectorPerTrack = TempPointer[24] + (((uint16_t)TempPointer[24+1])<<8);
+        cerr << "SectorPerTrack: " << BPB->SectorPerTrack << endl;
+        BPB->HeadCount = TempPointer[26] + (((uint16_t)TempPointer[26+1])<<8);
+        cerr << "HeadCount: " << BPB->HeadCount << endl;
+        BPB->HiddenSectorCount = TempPointer[28] + TempPointer[28] + (((uint32_t)TempPointer[28+1])<<8) + (((uint32_t)TempPointer[28+2])<<16) +  (((uint32_t)TempPointer[28+3])<<24);
+        cerr << "HiddenSectorCount: " << BPB->HiddenSectorCount << endl;
+        BPB->SectorCount32 = TempPointer[32] + (((uint32_t)TempPointer[32+1])<<8) + (((uint32_t)TempPointer[32+2])<<16) + (((uint32_t)TempPointer[32+3])<<24);
+        cerr << "SectorCount32: " << BPB->SectorCount32 << endl;
+
+   }
+*/
     void IdleEntry(void *param)
-    {
+    {   
+        
         MachineEnableSignals();
         while(true)
         {
@@ -592,6 +644,7 @@ extern "C"
 
         MachineContextCreate(&(ThreadIDVector[1]->context), IdleEntry , NULL,ThreadIDVector[1]->BaseStack, ThreadIDVector[1]->MemorySize);
 
+//<<<<<<< HEAD
         TMachineSignalState OldState;
         MachineSuspendSignals(&OldState);
         ThreadIDVector[CurrentThreadIndex]->ThreadState=VM_THREAD_STATE_WAITING;
@@ -603,10 +656,24 @@ extern "C"
         //GlobalValue= ThreadIDVector[CurrentThreadIndex]->file;
         VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, MACHINE_MEMORY_LIMIT, (void**)&TempPointer);
         ThreadIDVector[CurrentThreadIndex]->ThreadState=VM_THREAD_STATE_WAITING;
+//<<<<<<< HEAD
         MachineFileRead(ThreadIDVector[CurrentThreadIndex]->file, (void*)TempPointer, MACHINE_MEMORY_LIMIT, FileCallback, ThreadIDVector[CurrentThreadIndex]);
         scheduler();
         MachineResumeSignals(&OldState);
+/*=======
+        cerr<<"hand2";
+        MachineFileRead(GlobalValue, TempPointer, MACHINE_MEMORY_LIMIT, FileCallback, ThreadIDVector[CurrentThreadIndex]);
+        cerr << "hi";
+        scheduler();
+        cerr << "hey ";
 
+        for(int i=0; 512; i++)
+        {
+            cerr<<TempPointer[i]<< " ";
+        }
+>>>>>>> origin/project4
+*/
+       // parse(pointer);
         //if valid address
         if(VMMain != NULL)
         {

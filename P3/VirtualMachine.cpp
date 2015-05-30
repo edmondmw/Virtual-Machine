@@ -6,8 +6,7 @@
 #include <queue>
 #include <list>
 #include <string.h>
-#include <sys/stat.h>
-#include <fcntl.h>
+
 
 using namespace std;
 
@@ -68,7 +67,7 @@ extern "C"
 
     const TVMMemoryPoolID VM_MEMORY_POOL_ID_SHARED = 1;
 
-    const int MACHINE_MEMORY_LIMIT = 512;
+    const TVMMemorySize MACHINE_MEMORY_LIMIT = 512;
 
     volatile TVMThreadID CurrentThreadIndex;
 
@@ -544,7 +543,7 @@ extern "C"
         scheduler();
     }
 
-    TVMStatus VMStart(int tickms, TVMMemorySize heapsize, int machinetickms, TVMMemorySize sharedsize, const char *mount, int argc, char *argv[])
+    TVMStatus VMStart(int tickms, TVMMemorySize heapsize, int machinetickms, TVMMemorySize sharedsize,  int argc, char *argv[])
 	{    
         //declare it
 		TVMMainEntry VMMain;
@@ -553,10 +552,6 @@ extern "C"
         TVMMemoryPoolID id  = 12323;
         uint8_t* aBase = new uint8_t[heapsize];
         TVMMemorySize altsharedsize = sharedsize;
-        //VMMemoryPoolCreate(FileImageData, 512, &id);
-        //VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SYSTEM, 512, (void**)&(ThreadIDVector[VM_MEMORY_POOL_ID_SYSTEM]->BaseStack));
-        //MachineFileRead(3, data, length, FileCallback, VM_FILE_IMAGE);
-
 
         //round up to nearest multiple of 4096
         if((sharedsize % 4096) > 0)
@@ -590,19 +585,6 @@ extern "C"
         VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SYSTEM,ThreadIDVector[1]->MemorySize, (void**)&(ThreadIDVector[1]->BaseStack));
 
         MachineContextCreate(&(ThreadIDVector[1]->context), IdleEntry , NULL,ThreadIDVector[1]->BaseStack, ThreadIDVector[1]->MemorySize);
-
-        ThreadIDVector[CurrentThreadIndex]->ThreadState=VM_THREAD_STATE_WAITING;
-
-        void *pointer;
-        //mounting 
-        MachineFileOpen(mount, O_RDWR, 0644, FileCallback, ThreadIDVector[CurrentThreadIndex]);
-
-        scheduler();
-        GlobalValue= ThreadIDVector[CurrentThreadIndex]->file;
-        ThreadIDVector[CurrentThreadIndex]->ThreadState=VM_THREAD_STATE_WAITING;
-        MachineFileRead(GlobalValue, pointer, MACHINE_MEMORY_LIMIT, FileCallback, ThreadIDVector[CurrentThreadIndex]);
-        scheduler();
-
 
         //if valid address
         if(VMMain != NULL)
@@ -674,8 +656,8 @@ extern "C"
             MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
-        int LengthRemaining = *length;
-        int CurrentLength;
+        unsigned int LengthRemaining = *length;
+        unsigned int CurrentLength;
         int it = 0;
        // char* FullString = (char *)data;
 
@@ -787,8 +769,8 @@ extern "C"
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
 
-        int temp = *length;
-        int temp2;
+        unsigned int temp = *length;
+        unsigned int temp2;
         *length = 0;
 
         while(temp > 0)
@@ -1199,43 +1181,4 @@ extern "C"
         MachineResumeSignals(&OldState);
         return VM_STATUS_SUCCESS;
     }
-
-/*
-    TVMStatus VMDirectoryOpen(const char *dirname, int *dirdescriptor)
-    {
-        MachineSuspendSignals OldState;
-        MachineResumeSignals(&OldState);
-        if(dirname == NULL || dirdescriptor == NULL)
-        {
-            MachineResumeSignals(&OldState);
-            return VM_STATUS_ERROR_INVALID_PARAMETER;
-        }
-
-        if(ThreadIDVector[CurrentThreadIndex]-> < 0)
-        {
-            MachineResumeSignals(&OldState);
-            return VM_STATUS_FAILURE;
-        }
-
-        MachineFileOpen(dirname, O_RDWR, mode, FileCallback, ThreadIDVector[CurrentThreadIndex]);
-
-        ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
-        
-        scheduler();
-
-        *dirdescriptor = ThreadIDVector[CurrentThreadIndex]->;
-        MachineResumeSignals(&OldState);
-        return VM_STATUS_SUCCESS;
-    }
-    TVMStatus VMDirectoryClose(int dirdescriptor)
-    {
-        MachineSuspendSignals OldState;
-        MachineResumeSignals(&OldState);
-
-        if(ThreadIDVector[CurrentThreadIndex]->< 0)
-        {
-            MachineResumeSignals(&OldState);
-            return VM_STATUS_FAILURE;
-        }
-    }*/
 }
