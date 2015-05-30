@@ -6,13 +6,14 @@
 #include <queue>
 #include <list>
 #include <string.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 
 using namespace std;
 
 extern "C"
 {    
-    void FileCallback(void *calldata, int result);
+
     typedef struct
     {
         TVMThreadEntry entry;    //for the tread entry function 
@@ -48,10 +49,9 @@ extern "C"
         TVMMemorySize length; 
     }block;
 
-    //list of freelist and allocated list 
-    // free space = length of the amount of free space you have in freelist
     typedef struct 
     {
+
         TVMMemorySize MemoryPoolSize;
         TVMMemoryPoolID PoolID;
         //pointer to the base of memory array
@@ -64,23 +64,15 @@ extern "C"
 
     }MemoryPool;
 
-    typedef struct 
-    {/*
-        directory stuff
-      */  
-        
-    }directory;
-
-    typedef struct 
-    {
-        /* data */
-    }BootBlock;
-
     const TVMMemoryPoolID VM_MEMORY_POOL_ID_SYSTEM = 0;
 
     const TVMMemoryPoolID VM_MEMORY_POOL_ID_SHARED = 1;
 
+    const int MACHINE_MEMORY_LIMIT = 512;
+
     volatile TVMThreadID CurrentThreadIndex;
+
+    int GlobalValue;
 
     vector<MemoryPool*> MemoryIDVector;
 	vector<mutex*> MutexIDVector;
@@ -95,6 +87,8 @@ extern "C"
     vector<TCB*> LowWaitQueue;
 
     TVMMainEntry VMLoadModule(const char *module);
+
+   void FileCallback(void* calldata, int result);
 
     void IdleEntry(void *param)
     {
@@ -131,8 +125,6 @@ extern "C"
             }
     }
 
-    //checks what the current treadstate is and if it is ready puts it in proper queue
-    //place into ready queue
     void PlaceIntoQueue(TVMThreadID thread)
     {
         if(ThreadIDVector[thread]->ThreadState == VM_THREAD_STATE_READY)
@@ -152,9 +144,6 @@ extern "C"
         }
     }
 
-    //when sharedmemory is full, puts it in waitingqueue
-    //checks what the treadstate is and if it is waiting puts it in proper queue
-    //place into waiting queue
     void PlaceIntoWaitQueue(TVMThreadID thread)
     {
         if(ThreadIDVector[thread]->ThreadState == VM_THREAD_STATE_WAITING)
@@ -175,8 +164,6 @@ extern "C"
         }
     }
 
-    //used for shared memory when queue frees up puts it in ready
-    //if queue not empty move the thread from waiting to ready
     void WaitToReady()
     {
         TVMThreadID tid;
@@ -209,13 +196,11 @@ extern "C"
     {
         TVMThreadID tid;
         list<block*>::iterator it;
-        //if high wait queue not empty
+
         if(!HighWaitQueue.empty())
         {
-            //from beginning of freelist to end of freelist
             for(it = MemoryIDVector[VM_MEMORY_POOL_ID_SHARED]->FreeList.begin(); it != MemoryIDVector[VM_MEMORY_POOL_ID_SHARED]->FreeList.end();it++)
             {
-                //if legnth==memory size set thread id equal to the front of the queue, get rid of what is in from and move it to ready queue.
                 if((*it)->length >= HighWaitQueue.front()->memsize)
                 {
                     tid = HighWaitQueue.front()->Thread_ID;
@@ -353,14 +338,11 @@ extern "C"
         }
     }
 
-    //used to sort the block address
     bool compareBlockAddresses(const block* block1, const block* block2)
     {
         return ( block1->address < block2->address);
     }
 
-    //initalize everything from out memorypool struct and block struck
-    //block is inside out memory pool stuct so we initalize it here too
     TVMStatus VMMemoryPoolCreate(void* base, TVMMemorySize size, TVMMemoryPoolIDRef memory)
     {
         TMachineSignalState OldState;
@@ -411,7 +393,6 @@ extern "C"
         }
         //check first block with enough space,  set the new base, place into allocate
         list<block*>::iterator it;
-        //from beginning of freelist to end
         for(it = MemoryIDVector[memory]->FreeList.begin(); it != MemoryIDVector[memory]->FreeList.end(); it++)
         {
             //If the free space block has enough size then allocate
@@ -423,7 +404,6 @@ extern "C"
                 *pointer = (*it)->address;
                 MemoryIDVector[memory]->AllocatedList.push_back(aBlock);
                 
-                //used to set new base in the block
                 //If size != length, cut the block 
                 if(size != (*it)->length)
                 {
@@ -451,7 +431,6 @@ extern "C"
         return VM_STATUS_ERROR_INSUFFICIENT_RESOURCES;
     }
 
-    //merge only if it is contiguous
     //iterate through the memory pool's free list and merge any possible blocks
     void MergeFreeBlocks(TVMMemoryPoolID memory)
     {
@@ -488,7 +467,6 @@ extern "C"
         {
             if((*it)->address == pointer)
             {
-                //adds length of freespace remove from allocatedlist remove from freelist sort then merge 
                 //remove from allocated, place into free, sort, iterate through free and merge
                 block* aBlock = new block;
                 aBlock->address = (*it)->address;
@@ -534,7 +512,7 @@ extern "C"
             MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
-        //bytesleft equals the addess of freespace
+
         *bytesleft = MemoryIDVector[memory]->FreeSpace;
 
         MachineResumeSignals(&OldState);
@@ -566,29 +544,22 @@ extern "C"
         scheduler();
     }
 
-
-
     TVMStatus VMStart(int tickms, TVMMemorySize heapsize, int machinetickms, TVMMemorySize sharedsize, const char *mount, int argc, char *argv[])
 	{    
+        
         //declare it
 		TVMMainEntry VMMain;
         //load the module
 		VMMain = VMLoadModule(argv[0]);	
-        uint8_t* FileImageData;
         TVMMemoryPoolID id  = 12323;
-
+        uint8_t* aBase = new uint8_t[heapsize];
         TVMMemorySize altsharedsize = sharedsize;
-        //mounting 
-        MachineFileOpen(mount, O_RDWR, 0644, FileCallback, ThreadIDVector[CurrentThreadIndex]);
-        ThreadIDVector[CurrentThreadIndex]->ThreadState=VM_THREAD_STATE_WAITING;
+        //VMMemoryPoolCreate(FileImageData, 512, &id);
+        //VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SYSTEM, 512, (void**)&(ThreadIDVector[VM_MEMORY_POOL_ID_SYSTEM]->BaseStack));
+        //MachineFileRead(3, data, length, FileCallback, VM_FILE_IMAGE);
 
-        scheduler();
-        VMMemoryPoolCreate(FileImageData, 512, &id);
-        VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SYSTEM, 512, (void**)&(ThreadIDVector[VM_MEMORY_POOL_ID_SYSTEM]->BaseStack));
-        MachineFileRead(3, data, length, FileCallback, calldata);
-       
+
         //round up to nearest multiple of 4096
-        //sharedmem size
         if((sharedsize % 4096) > 0)
         {
             altsharedsize = (sharedsize + 4096)/4096*4096;
@@ -596,15 +567,11 @@ extern "C"
 
         void* sharedBase = MachineInitialize(machinetickms, altsharedsize);
         MachineRequestAlarm(tickms*1000,(TMachineAlarmCallback)AlarmRequestCallback,NULL);
-
-        uint8_t* aBase = new uint8_t[heapsize];
-
-        
-        //regular memory
+        MachineEnableSignals();
         VMMemoryPoolCreate(aBase, heapsize, &id);
 
-        //shared memory
         VMMemoryPoolCreate((uint8_t*)sharedBase, altsharedsize, &id);
+
 
         //create the system memory pool
         //create main thread
@@ -625,6 +592,23 @@ extern "C"
 
         MachineContextCreate(&(ThreadIDVector[1]->context), IdleEntry , NULL,ThreadIDVector[1]->BaseStack, ThreadIDVector[1]->MemorySize);
 
+        ThreadIDVector[CurrentThreadIndex]->ThreadState=VM_THREAD_STATE_WAITING;
+
+        uint8_t *TempPointer;
+        //mounting 
+        MachineFileOpen(mount, O_RDWR, 0644, FileCallback, ThreadIDVector[CurrentThreadIndex]);
+
+        scheduler();
+        GlobalValue= ThreadIDVector[CurrentThreadIndex]->file;
+        VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, MACHINE_MEMORY_LIMIT, (void **)&TempPointer);
+        ThreadIDVector[CurrentThreadIndex]->ThreadState=VM_THREAD_STATE_WAITING;
+        MachineFileRead(GlobalValue, (void*)TempPointer, MACHINE_MEMORY_LIMIT, FileCallback, ThreadIDVector[CurrentThreadIndex]);
+        scheduler();
+
+        for(int i=0; 512; i++)
+        {
+            cerr<<TempPointer[i]<< " ";
+        }
 
         //if valid address
         if(VMMain != NULL)
@@ -672,6 +656,7 @@ extern "C"
 		
     }
 
+
     void FileCallback(void* calldata, int result)
     {    
         TCB* MyTCB = (TCB*)calldata;
@@ -684,11 +669,12 @@ extern "C"
         scheduler();
     }
 
+
     TVMStatus VMFileWrite(int filedescriptor, void *data, int *length)
     {
         TMachineSignalState OldState;
         MachineSuspendSignals(&OldState);
-        //cerr<<endl<<"enter write "<<CurrentThreadIndex<<endl;
+
         if(data == NULL || length == NULL)
         {
             MachineResumeSignals(&OldState);
@@ -702,30 +688,8 @@ extern "C"
         ThreadIDVector[CurrentThreadIndex]->memsize = *length;
 
         void *shared = NULL;      
-      /*  
-        if(*length > 512)
-        {
-            while(VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, 512, &shared) == VM_STATUS_ERROR_INSUFFICIENT_RESOURCES)
-            {
-                ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
-                PlaceIntoWaitQueue(CurrentThreadIndex);
-                scheduler();
-            }    
-        }
-        else
-        {
-            while(VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, *length, &shared) == VM_STATUS_ERROR_INSUFFICIENT_RESOURCES)
-            {
-                ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
-                PlaceIntoWaitQueue(CurrentThreadIndex);
-                scheduler();
-            }
-        }
-        //after while loop check if enough space for next thing to run
-        CheckForFreeSharedSpace();
-        scheduler();
-*/
-        while(VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, 512, &shared) == VM_STATUS_ERROR_INSUFFICIENT_RESOURCES)
+     
+        while(VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, MACHINE_MEMORY_LIMIT, &shared) == VM_STATUS_ERROR_INSUFFICIENT_RESOURCES)
         {
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
             PlaceIntoWaitQueue(CurrentThreadIndex);
@@ -734,54 +698,35 @@ extern "C"
         //while loop to make sure data transfer is in 512 byte segments
         while(LengthRemaining > 0)
         {
-            if(LengthRemaining > 512)
+            if(LengthRemaining > MACHINE_MEMORY_LIMIT)
             {
-                LengthRemaining -= 512;
-                CurrentLength = 512;
+                LengthRemaining -= MACHINE_MEMORY_LIMIT;
+                CurrentLength = MACHINE_MEMORY_LIMIT;
             }
             else
             {
                 CurrentLength = LengthRemaining;
                 LengthRemaining = 0;
             }
-           /* char tempString[CurrentLength];
-
-            for(int i = 0; i < CurrentLength; i++, it++)
-            {
-                tempString[i] = FullString[it];
-            }*/
-
-           /* while(VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, CurrentLength, &shared) == VM_STATUS_ERROR_INSUFFICIENT_RESOURCES)
-            {
-                ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
-                PlaceIntoWaitQueue(CurrentThreadIndex);
-                scheduler();
-            }  */  
 
             memcpy(shared,(char*)data + it,CurrentLength);
             it+=CurrentLength;
             MachineFileWrite(filedescriptor, shared, CurrentLength, FileCallback, ThreadIDVector[CurrentThreadIndex]);
-            //cerr<<endl<<"CURRENT THREAD WAITING FOR FILEWRITE "<<CurrentThreadIndex<<endl;
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
             scheduler();  
-            //cerr<<endl<<"CURRENT THREAD BACK "<<CurrentThreadIndex<<endl;
         }
+
         VMMemoryPoolDeallocate(VM_MEMORY_POOL_ID_SHARED, shared);       
 
         WaitToReady();
-        //ThreadIDVector[CurrentThreadIndex]->ThreadState=VM_THREAD_STATE_READY;
-        //PlaceIntoQueue(CurrentThreadIndex);
-        //CheckForFreeSharedSpace();
         scheduler();
         
         if(ThreadIDVector[CurrentThreadIndex]->file < 0)
         {
-            //cerr<<endl<<"exit write fail "<<CurrentThreadIndex<<endl;
             MachineResumeSignals(&OldState);
             return VM_STATUS_FAILURE;
         }
-        //cerr<<endl<<"exit write success"<< CurrentThreadIndex<< endl;
-        MachineResumeSignals(&OldState);
+            MachineResumeSignals(&OldState);
         return VM_STATUS_SUCCESS;      
     }    
 
@@ -806,7 +751,7 @@ extern "C"
 		}
 
         ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
-        //WaitingQueue.push_back(ThreadIDVector[CurrentThreadIndex]);
+
         scheduler();
 
         *filedescriptor = ThreadIDVector[CurrentThreadIndex]->file;
@@ -852,31 +797,26 @@ extern "C"
         int temp2;
         *length = 0;
 
-        //error check to see if length is a valid value
         while(temp > 0)
         {
-            //if temp is bigger then 512 bytes then set new temp to 512, the max it can be
-            if(temp > 512)
+            if(temp > MACHINE_MEMORY_LIMIT)
             {
-                temp -= 512;
-                temp2 = 512;
+                temp -= MACHINE_MEMORY_LIMIT;
+                temp2 = MACHINE_MEMORY_LIMIT;
             }
-            //set newtemp to temp's value to keep error checking temp
             else
             {
                 temp2 = temp;
                 temp = 0;
             }
 
-            void *shared; 
-            //gets it from shared memory
-            VMMemoryPoolAllocate(1, (TVMMemorySize)temp2, &shared);
+            void *shared;      
+            VMMemoryPoolAllocate(1, MACHINE_MEMORY_LIMIT, &shared);
 
             MachineFileRead(filedescriptor, shared, temp2, FileCallback, ThreadIDVector[CurrentThreadIndex]);
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
             scheduler();  
 
-            //data=destination, shared=source, temp2=size
             memcpy(data, shared, temp2);
             VMMemoryPoolDeallocate(VM_MEMORY_POOL_ID_SHARED, shared);
 
@@ -1265,6 +1205,7 @@ extern "C"
         MachineResumeSignals(&OldState);
         return VM_STATUS_SUCCESS;
     }
+
 /*
     TVMStatus VMDirectoryOpen(const char *dirname, int *dirdescriptor)
     {
