@@ -68,7 +68,7 @@ extern "C"
 
     const TVMMemoryPoolID VM_MEMORY_POOL_ID_SHARED = 1;
 
-    const int MACHINE_MEMORY_LIMIT = 512;
+    const TVMMemorySize MACHINE_MEMORY_LIMIT = 512;
 
     volatile TVMThreadID CurrentThreadIndex;
 
