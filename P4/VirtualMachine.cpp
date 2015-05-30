@@ -567,7 +567,7 @@ extern "C"
 
         void* sharedBase = MachineInitialize(machinetickms, altsharedsize);
         MachineRequestAlarm(tickms*1000,(TMachineAlarmCallback)AlarmRequestCallback,NULL);
-        MachineEnableSignals();
+        //MachineEnableSignals();
         VMMemoryPoolCreate(aBase, heapsize, &id);
 
         VMMemoryPoolCreate((uint8_t*)sharedBase, altsharedsize, &id);
@@ -592,23 +592,20 @@ extern "C"
 
         MachineContextCreate(&(ThreadIDVector[1]->context), IdleEntry , NULL,ThreadIDVector[1]->BaseStack, ThreadIDVector[1]->MemorySize);
 
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
         ThreadIDVector[CurrentThreadIndex]->ThreadState=VM_THREAD_STATE_WAITING;
 
-        uint8_t *TempPointer;
+        uint8_t *TempPointer = NULL;
         //mounting 
         MachineFileOpen(mount, O_RDWR, 0644, FileCallback, ThreadIDVector[CurrentThreadIndex]);
-
         scheduler();
-        GlobalValue= ThreadIDVector[CurrentThreadIndex]->file;
-        VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, MACHINE_MEMORY_LIMIT, (void **)&TempPointer);
+        //GlobalValue= ThreadIDVector[CurrentThreadIndex]->file;
+        VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, MACHINE_MEMORY_LIMIT, (void**)&TempPointer);
         ThreadIDVector[CurrentThreadIndex]->ThreadState=VM_THREAD_STATE_WAITING;
-        MachineFileRead(GlobalValue, (void*)TempPointer, MACHINE_MEMORY_LIMIT, FileCallback, ThreadIDVector[CurrentThreadIndex]);
+        MachineFileRead(ThreadIDVector[CurrentThreadIndex]->file, (void*)TempPointer, MACHINE_MEMORY_LIMIT, FileCallback, ThreadIDVector[CurrentThreadIndex]);
         scheduler();
-
-        for(int i=0; 512; i++)
-        {
-            cerr<<TempPointer[i]<< " ";
-        }
+        MachineResumeSignals(&OldState);
 
         //if valid address
         if(VMMain != NULL)
@@ -660,10 +657,8 @@ extern "C"
     void FileCallback(void* calldata, int result)
     {    
         TCB* MyTCB = (TCB*)calldata;
-        //ThreadIDVector[MyTCB->Thread_ID]->file = result;
         MyTCB->file = result;
         MyTCB->ThreadState = VM_THREAD_STATE_READY;
-        //cerr<<endl<<"callback "<< MyTCB->Thread_ID <<endl;
 
         PlaceIntoQueue(MyTCB->Thread_ID);
         scheduler();
@@ -680,8 +675,8 @@ extern "C"
             MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
-        int LengthRemaining = *length;
-        int CurrentLength;
+        unsigned int LengthRemaining = *length;
+        unsigned int CurrentLength;
         int it = 0;
        // char* FullString = (char *)data;
 
@@ -793,8 +788,8 @@ extern "C"
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
 
-        int temp = *length;
-        int temp2;
+        unsigned int temp = *length;
+        unsigned int temp2;
         *length = 0;
 
         while(temp > 0)
