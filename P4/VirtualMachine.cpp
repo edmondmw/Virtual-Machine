@@ -181,7 +181,7 @@ extern "C"
         for(int i=0; i<MyBPB->FATCount; i++)
         {
             uint8_t *TempOffset;//for offset for memory pool allocation
-            uint16_t  *temp; //for casting to make it uint16
+            uint16_t temp; //for casting to make it uint16
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
             MachineFileSeek(GlobalValue, FirstFatSector, 0, FileCallback, ThreadIDVector[CurrentThreadIndex]);  
             scheduler();
@@ -193,7 +193,7 @@ extern "C"
             while(j < 512)
             {
                 int k =j+2;//2 sectors per cluster
-                temp=TempPointer[k] + (((uint16_t)TempPointer[k+1])<<8);
+                temp=TempPointer[k];// + (((uint16_t)TempPointer[k+1])<<8);
                 j +=2;
                 FATVector.push_back(temp);
             }    
