@@ -74,7 +74,7 @@ extern "C"
 
     int GlobalValue;
 
-    
+    vector<uint16_t*> FATVector;
     vector<MemoryPool*> MemoryIDVector;
 	vector<mutex*> MutexIDVector;
     vector<TCB*> ThreadIDVector;
@@ -88,6 +88,7 @@ extern "C"
     vector<TCB*> LowWaitQueue;
 
     TVMMainEntry VMLoadModule(const char *module);
+    void scheduler();
 
 
    void FileCallback(void* calldata, int result);
@@ -126,55 +127,78 @@ extern "C"
         {
             MyBPB->name.push_back(TempPointer[i]);
         }
-        cerr << "OEM Name: " << MyBPB->name << endl;
+        //cerr << "OEM Name: " << MyBPB->name << endl;
         MyBPB->BytePerSector = TempPointer[11] + (((uint16_t)TempPointer[11+1])<<8);
-        cerr << "BytePerSector: " << MyBPB->BytePerSector << endl;
+        //cerr << "BytePerSector: " << MyBPB->BytePerSector << endl;
         MyBPB->SectorsPerCluster = TempPointer[13];
-        cerr << "SectorsPerCluster: " << MyBPB->SectorsPerCluster << endl;
+        //cerr << "SectorsPerCluster: " << MyBPB->SectorsPerCluster << endl;
         MyBPB->ReservedSectors = TempPointer[14] + (((uint16_t)TempPointer[14+1])<<8);
-        cerr << "ReservedSectors: " << MyBPB->ReservedSectors << endl;
+        //cerr << "ReservedSectors: " << MyBPB->ReservedSectors << endl;
         MyBPB->FATCount = TempPointer[16]; 
-        cerr << "FATCount: " << MyBPB->FATCount << endl;
+        //cerr << "FATCount: " << MyBPB->FATCount << endl;
         MyBPB->RootEntry = TempPointer[17] + (((uint16_t)TempPointer[17+1])<<8);
-        cerr << "RootEntry: " << MyBPB->RootEntry << endl;
+        //cerr << "RootEntry: " << MyBPB->RootEntry << endl;
         MyBPB->SectorCount16 = TempPointer[19] + (((uint16_t)TempPointer[19+1])<<8);
-        cerr << "SectorCount16: " << MyBPB->SectorCount16<< endl;
+        //cerr << "SectorCount16: " << MyBPB->SectorCount16<< endl;
         MyBPB->Media = TempPointer[21]; 
-        cerr << "Media: " << MyBPB->Media << endl;
+        //cerr << "Media: " << MyBPB->Media << endl;
         MyBPB->FATSize16 = TempPointer[22] + (((uint16_t)TempPointer[22+1])<<8);
-        cerr << "FATSize16: " << MyBPB->FATSize16 << endl;
+        //cerr << "FATSize16: " << MyBPB->FATSize16 << endl;
         MyBPB->SectorPerTrack = TempPointer[24] + (((uint16_t)TempPointer[24+1])<<8);
-        cerr << "SectorPerTrack: " << MyBPB->SectorPerTrack << endl;
+        //cerr << "SectorPerTrack: " << MyBPB->SectorPerTrack << endl;
         MyBPB->HeadCount = TempPointer[26] + (((uint16_t)TempPointer[26+1])<<8);
-        cerr << "HeadCount: " << MyBPB->HeadCount << endl;
+        //cerr << "HeadCount: " << MyBPB->HeadCount << endl;
         MyBPB->HiddenSectorCount = TempPointer[28] + TempPointer[28] + (((uint32_t)TempPointer[28+1])<<8) + (((uint32_t)TempPointer[28+2])<<16) +  (((uint32_t)TempPointer[28+3])<<24);
-        cerr << "HiddenSectorCount: " << MyBPB->HiddenSectorCount << endl;
+        //cerr << "HiddenSectorCount: " << MyBPB->HiddenSectorCount << endl;
         MyBPB->SectorCount32 = TempPointer[32] + (((uint32_t)TempPointer[32+1])<<8) + (((uint32_t)TempPointer[32+2])<<16) + (((uint32_t)TempPointer[32+3])<<24);
-        cerr << "SectorCount32: " << MyBPB->SectorCount32 << endl;
+        //cerr << "SectorCount32: " << MyBPB->SectorCount32 << endl;
         MyBPB->DriveNumer = TempPointer[36];
-        cerr << "DriveNumer: " << MyBPB->DriveNumer << endl;
+        //cerr << "DriveNumer: " << MyBPB->DriveNumer << endl;
         MyBPB->BootSignature = TempPointer[38];
-        cerr << "BootSignature: " << MyBPB->BootSignature << endl;
+        //cerr << "BootSignature: " << MyBPB->BootSignature << endl;
         MyBPB->VolumeID = TempPointer[39] + (((uint32_t)TempPointer[39+1])<<8) + (((uint32_t)TempPointer[39+2])<<16) + (((uint32_t)TempPointer[39+3])<<24);
-        cerr << "VolumeID: " << hex<< MyBPB->VolumeID << dec<< endl;
+        //cerr << "VolumeID: " << hex<< MyBPB->VolumeID << dec<< endl;
         for(int i = 43; i<53; i++)
         {
             MyBPB->VolumeLabel.push_back(TempPointer[i]);
         }
-        cerr << "VolumeLabel: " << "\"" << MyBPB->VolumeLabel << "\"" << endl;
+        //cerr << "VolumeLabel: " << "\"" << MyBPB->VolumeLabel << "\"" << endl;
         for(int i = 54; i<61; i++)
         {
             MyBPB->FileSystemType.push_back(TempPointer[i]);
         }
-        cerr << "FileSystemType: " << "\"" << MyBPB->FileSystemType << "\"" << endl;
+        //cerr << "FileSystemType: " << "\"" << MyBPB->FileSystemType << "\"" << endl;
         MyBPB->RootDirectorySectors = (MyBPB->RootEntry * 32) / 512;
-        cerr << "RootDirectorySectors: " << MyBPB->RootDirectorySectors << endl;
+        //cerr << "RootDirectorySectors: " << MyBPB->RootDirectorySectors << endl;
         MyBPB->FirstRootSector = MyBPB->ReservedSectors + MyBPB->FATCount * MyBPB->FATSize16;
-        cerr << "FirstRootSector: " << MyBPB->FirstRootSector << endl;
+        //cerr << "FirstRootSector: " << MyBPB->FirstRootSector << endl;
         MyBPB->FirstDataSector = MyBPB->FirstRootSector + MyBPB->RootDirectorySectors;
-        cerr << "FirstDataSector: " << MyBPB->FirstDataSector << endl;
+        //cerr << "FirstDataSector: " << MyBPB->FirstDataSector << endl;
         MyBPB->ClusterCount = (MyBPB->SectorCount32 - MyBPB->FirstDataSector) / MyBPB->SectorsPerCluster;
-        cerr << "ClusterCount: " << MyBPB->ClusterCount << endl;
+        //cerr << "ClusterCount: " << MyBPB->ClusterCount << endl;
+        int FirstFatSector = MyBPB->ReservedSectors*512;
+
+        for(int i=0; i<MyBPB->FATCount; i++)
+        {
+            uint8_t *TempOffset;//for offset for memory pool allocation
+            uint16_t  *temp; //for casting to make it uint16
+            ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+            MachineFileSeek(GlobalValue, FirstFatSector, 0, FileCallback, ThreadIDVector[CurrentThreadIndex]);  
+            scheduler();
+            VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, MACHINE_MEMORY_LIMIT, (void**)TempOffset);
+            ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+            MachineFileRead(GlobalValue, TempOffset, MACHINE_MEMORY_LIMIT, FileCallback, ThreadIDVector[CurrentThreadIndex]);
+            scheduler();
+            int j = 0;
+            while(j < 512)
+            {
+                int k =j+2;//2 sectors per cluster
+                temp=TempPointer[k] + (((uint16_t)TempPointer[k+1])<<8);
+                j +=2;
+                FATVector.push_back(temp);
+            }    
+            cerr << FATVector[i] << endl;
+        }   
 
    }
 
@@ -715,6 +739,14 @@ extern "C"
 >>>>>>> origin/project4
 */
         parse(TempPointer);
+
+/*
+        uint8_t *FATPointer = NULL;
+        VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, MACHINE_MEMORY_LIMIT, (void**)&FATPointer);
+        ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+        MachineFileRead(GlobalValue, FATPointer, MACHINE_MEMORY_LIMIT, FileCallback ThreadIDVector[CurrentThreadIndex]);
+        scheduler();
+*/
         //if valid address
         if(VMMain != NULL)
         {
