@@ -120,9 +120,14 @@ extern "C"
         uint16_t ClusterCount;
    }BPB;
 
+   typedef struct 
+   {
+        SVMDirectoryEntry DirectoryEntry;
+   }RootName;
 
    void parse(uint8_t* TempPointer)
    {
+        //stores the bpb. gets info from fat file
         BPB *MyBPB=new BPB;
         for(int i=3; i<11; i++)
         {
@@ -178,7 +183,8 @@ extern "C"
         MyBPB->ClusterCount = (MyBPB->SectorCount32 - MyBPB->FirstDataSector) / MyBPB->SectorsPerCluster;
         //cerr << "ClusterCount: " << MyBPB->ClusterCount << endl;
         int FirstFatSector = MyBPB->ReservedSectors*512;
-//FAT PARSE
+        //gets where the first fat begins
+//parse fat
         void *TempOffset=NULL;//for offset for memory pool allocation
         uint16_t *FATtemp; //for casting to make it uint16
         for(int i=0; i<MyBPB->FATSize16; i++)
@@ -187,15 +193,18 @@ extern "C"
             VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, MACHINE_MEMORY_LIMIT, (void**)&TempOffset);
             //cerr << "2" << endl;
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+            //iterates though the each 512 bytes from the first fatsector
             MachineFileSeek(GlobalValue, FirstFatSector+(i*512), 0, FileCallback, ThreadIDVector[CurrentThreadIndex]);  
             //cerr << "3" << endl;
             scheduler();
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+            //stores in tempoffset
             MachineFileRead(GlobalValue, TempOffset, MACHINE_MEMORY_LIMIT, FileCallback, ThreadIDVector[CurrentThreadIndex]);
             //cerr << "4" << endl;
             scheduler();
             int j = 0;
             //temp = *TempOffset;
+            //gets info from tempoffset and sets it to uint16 to store in vecotr
             FATtemp=(uint16_t*)TempOffset;
             //cerr << "5" << endl;
             while(j < 256)   //read in half of the fat
@@ -203,6 +212,7 @@ extern "C"
                 //2 sectors per cluster
                 //temp=TempPointer[j];// + (((uint16_t)TempPointer[k+1])<<8);
                 //cerr << "6" << endl;
+                //stores into fatvector
                 FATVector.push_back(FATtemp[j]); 
                 //cerr << "8" << endl;
                 //cerr << temp[j] ;
@@ -216,17 +226,20 @@ extern "C"
         }   
         //cerr << endl;
 //ROOT PARSE
+        //same as parsing fat cept use diff iteration values
         //cerr << "@" << endl;
         void* RootTempOffset= NULL;
         uint8_t *RootTemp;
         //cerr << "!" << endl;
+        //iterate till end of root directory sector
         for(int i=0; i<MyBPB->RootDirectorySectors; i++)
         {
             //cerr << "1" << endl;
-            VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, MACHINE_MEMORY_LIMIT, (void**)&TempOffset);
+            VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, MACHINE_MEMORY_LIMIT, (void**)&RootTempOffset);
             //cerr << "2" << endl;
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
-            MachineFileSeek(GlobalValue, MyBPB->FirstRootSector+(i*512), 0, FileCallback, ThreadIDVector[CurrentThreadIndex]);  
+            //iterates though each 512 bytes from the first root sector location
+            MachineFileSeek(GlobalValue, (MyBPB->FirstRootSector*512)+(i*512), 0, FileCallback, ThreadIDVector[CurrentThreadIndex]);  
             //cerr << "3" << endl;
             scheduler();
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
@@ -235,6 +248,7 @@ extern "C"
             scheduler();
             int j = 0;
             //temp = *TempOffset;
+            //stores rootTemp to result get from machine file read
             RootTemp=(uint8_t*)RootTempOffset;
             //cerr << "5" << endl;
             while(j < (int)MACHINE_MEMORY_LIMIT)   
@@ -242,18 +256,55 @@ extern "C"
                 //2 sectors per cluster
                 //temp=TempPointer[j];// + (((uint16_t)TempPointer[k+1])<<8);
                 //cerr << "6" << endl;
+                //pushes back into root
                 RootVector.push_back(RootTemp[j]); 
-                cerr << "8" << endl;
+                //cerr << "8" << endl;
                 //cerr << temp[j] ;
-                cerr << hex <<RootTemp[j] << dec << " ";
+                //cerr << hex <<RootTemp[j] << dec << " ";
                 j++;
                 //cerr << "7" << endl;
-                
-
             }    
-            
         }   
-        cerr << endl;
+        //cerr << endl;
+//reading root
+        uint8_t* blah = (uint8_t*)RootTemp;
+        RootTemp = NULL;
+        RootName *MyRootEntry=new RootName;
+        cerr << "1" << endl;
+        for(int i=0; i<16; i++)
+        {
+            cerr << "2" << endl;
+            if(blah[11+(i*32)] != 15 && blah[(i*32)] != '\0')
+            {
+                cerr << "3" << endl;
+                int index=0;
+                for(int j=0; j<11 ; j++)
+                {
+                    cerr << "!" << endl;
+                    if(j<8 && blah[11+(i*32)] != ' ')
+                    {
+                        cerr <<"@" << endl;
+                        MyRootEntry->DirectoryEntry.DShortFileName[index] = blah[11+(i*32)];
+                        index++;
+                    }
+                    if(j==8)
+                    {
+                        cerr << "#" << endl;
+                        //add index = to .
+                        MyRootEntry->DirectoryEntry.DShortFileName[index]='.';
+                        index++;
+                    }
+                    if(j>8 && blah[11+(i*32)] !=' ')
+                    {
+                        cerr << "$" << endl;
+                        MyRootEntry->DirectoryEntry.DShortFileName[index] = blah[11+(i*32)];
+                        index++;
+                    }
+                }    
+                
+            }
+        }
+        cerr << "4" << endl;
    }
 
     void IdleEntry(void *param)
@@ -262,6 +313,7 @@ extern "C"
         MachineEnableSignals();
         while(true)
         {
+           //cerr << "5" << endl;
         }
     }
 
