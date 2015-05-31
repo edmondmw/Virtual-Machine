@@ -72,9 +72,9 @@ extern "C"
 
     volatile TVMThreadID CurrentThreadIndex;
 
-    int GlobalValue;
+    int GlobalValue;    //filecallback result
 
-    vector<uint16_t*> FATVector;
+    vector<uint16_t> FATVector;
     vector<MemoryPool*> MemoryIDVector;
 	vector<mutex*> MutexIDVector;
     vector<TCB*> ThreadIDVector;
@@ -178,26 +178,38 @@ extern "C"
         //cerr << "ClusterCount: " << MyBPB->ClusterCount << endl;
         int FirstFatSector = MyBPB->ReservedSectors*512;
 
-        for(int i=0; i<MyBPB->FATCount; i++)
+        void *TempOffset=NULL;//for offset for memory pool allocation
+        uint16_t *temp; //for casting to make it uint16
+        for(int i=0; i<MyBPB->FATSize16; i++)
         {
-            uint8_t *TempOffset;//for offset for memory pool allocation
-            uint16_t temp; //for casting to make it uint16
-            ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
-            MachineFileSeek(GlobalValue, FirstFatSector, 0, FileCallback, ThreadIDVector[CurrentThreadIndex]);  
-            scheduler();
+            cerr << "1" << endl;
             VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, MACHINE_MEMORY_LIMIT, (void**)TempOffset);
+            cerr << "2" << endl;
+            ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+            MachineFileSeek(GlobalValue, FirstFatSector+(i*512), 0, FileCallback, ThreadIDVector[CurrentThreadIndex]);  
+            cerr << "3" << endl;
+            scheduler();
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
             MachineFileRead(GlobalValue, TempOffset, MACHINE_MEMORY_LIMIT, FileCallback, ThreadIDVector[CurrentThreadIndex]);
+            cerr << "4" << endl;
             scheduler();
             int j = 0;
-            while(j < 512)
+            //temp = *TempOffset;
+            temp=(uint16_t*)TempOffset;
+            cerr << "5" << endl;
+            while(j < 256)   //read in half of the fat
             {
-                int k =j+2;//2 sectors per cluster
-                temp=TempPointer[k];// + (((uint16_t)TempPointer[k+1])<<8);
-                j +=2;
-                FATVector.push_back(temp);
+                //2 sectors per cluster
+                //temp=TempPointer[j];// + (((uint16_t)TempPointer[k+1])<<8);
+                cerr << "6" << endl;
+                FATVector.push_back(temp[j]); 
+                cerr << "8" << endl;
+                //cerr << temp[j] ;
+                j++;
+                cerr << "7" << endl;
+                cerr << hex <<FATVector[j] << dec << endl;
+
             }    
-            cerr << FATVector[i] << endl;
         }   
 
    }
