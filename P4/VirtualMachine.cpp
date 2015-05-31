@@ -75,6 +75,7 @@ extern "C"
     int GlobalValue;    //filecallback result
 
     vector<uint16_t> FATVector;
+    vector<uint8_t> RootVector;
     vector<MemoryPool*> MemoryIDVector;
 	vector<mutex*> MutexIDVector;
     vector<TCB*> ThreadIDVector;
@@ -177,41 +178,82 @@ extern "C"
         MyBPB->ClusterCount = (MyBPB->SectorCount32 - MyBPB->FirstDataSector) / MyBPB->SectorsPerCluster;
         //cerr << "ClusterCount: " << MyBPB->ClusterCount << endl;
         int FirstFatSector = MyBPB->ReservedSectors*512;
-
+//FAT PARSE
         void *TempOffset=NULL;//for offset for memory pool allocation
-        uint16_t *temp; //for casting to make it uint16
+        uint16_t *FATtemp; //for casting to make it uint16
         for(int i=0; i<MyBPB->FATSize16; i++)
         {
-            cerr << "1" << endl;
-            VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, MACHINE_MEMORY_LIMIT, (void**)TempOffset);
-            cerr << "2" << endl;
+            //cerr << "1" << endl;
+            VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, MACHINE_MEMORY_LIMIT, (void**)&TempOffset);
+            //cerr << "2" << endl;
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
             MachineFileSeek(GlobalValue, FirstFatSector+(i*512), 0, FileCallback, ThreadIDVector[CurrentThreadIndex]);  
-            cerr << "3" << endl;
+            //cerr << "3" << endl;
             scheduler();
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
             MachineFileRead(GlobalValue, TempOffset, MACHINE_MEMORY_LIMIT, FileCallback, ThreadIDVector[CurrentThreadIndex]);
-            cerr << "4" << endl;
+            //cerr << "4" << endl;
             scheduler();
             int j = 0;
             //temp = *TempOffset;
-            temp=(uint16_t*)TempOffset;
-            cerr << "5" << endl;
+            FATtemp=(uint16_t*)TempOffset;
+            //cerr << "5" << endl;
             while(j < 256)   //read in half of the fat
             {
                 //2 sectors per cluster
                 //temp=TempPointer[j];// + (((uint16_t)TempPointer[k+1])<<8);
-                cerr << "6" << endl;
-                FATVector.push_back(temp[j]); 
-                cerr << "8" << endl;
+                //cerr << "6" << endl;
+                FATVector.push_back(FATtemp[j]); 
+                //cerr << "8" << endl;
                 //cerr << temp[j] ;
+                //cerr << hex <<FATtemp[j] << dec << " ";
                 j++;
-                cerr << "7" << endl;
-                cerr << hex <<FATVector[j] << dec << endl;
+                //cerr << "7" << endl;
+                
 
             }    
+            
         }   
+        //cerr << endl;
+//ROOT PARSE
+        //cerr << "@" << endl;
+        void* RootTempOffset= NULL;
+        uint8_t *RootTemp;
+        //cerr << "!" << endl;
+        for(int i=0; i<MyBPB->RootDirectorySectors; i++)
+        {
+            //cerr << "1" << endl;
+            VMMemoryPoolAllocate(VM_MEMORY_POOL_ID_SHARED, MACHINE_MEMORY_LIMIT, (void**)&TempOffset);
+            //cerr << "2" << endl;
+            ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+            MachineFileSeek(GlobalValue, MyBPB->FirstRootSector+(i*512), 0, FileCallback, ThreadIDVector[CurrentThreadIndex]);  
+            //cerr << "3" << endl;
+            scheduler();
+            ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+            MachineFileRead(GlobalValue, RootTempOffset, MACHINE_MEMORY_LIMIT, FileCallback, ThreadIDVector[CurrentThreadIndex]);
+            //cerr << "4" << endl;
+            scheduler();
+            int j = 0;
+            //temp = *TempOffset;
+            RootTemp=(uint8_t*)RootTempOffset;
+            //cerr << "5" << endl;
+            while(j < (int)MACHINE_MEMORY_LIMIT)   
+            {
+                //2 sectors per cluster
+                //temp=TempPointer[j];// + (((uint16_t)TempPointer[k+1])<<8);
+                //cerr << "6" << endl;
+                RootVector.push_back(RootTemp[j]); 
+                cerr << "8" << endl;
+                //cerr << temp[j] ;
+                cerr << hex <<RootTemp[j] << dec << " ";
+                j++;
+                //cerr << "7" << endl;
+                
 
+            }    
+            
+        }   
+        cerr << endl;
    }
 
     void IdleEntry(void *param)
