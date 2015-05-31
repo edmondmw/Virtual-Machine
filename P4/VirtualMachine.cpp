@@ -88,7 +88,7 @@ extern "C"
     vector<TCB*> LowWaitQueue;
 
     TVMMainEntry VMLoadModule(const char *module);
-    void parse(uint16_t* TempPointer);
+
 
    void FileCallback(void* calldata, int result);
 
@@ -107,18 +107,26 @@ extern "C"
         uint16_t HeadCount;
         uint32_t HiddenSectorCount;
         uint32_t SectorCount32;
+        uint16_t DriveNumer;
+        uint16_t BootSignature;
+        uint32_t VolumeID;
+        string VolumeLabel;
+        string FileSystemType;
+        uint16_t FirstRootSector;
+        uint16_t RootDirectorySectors;
+        uint16_t FirstDataSector;
+        uint16_t ClusterCount;
    }BPB;
 
-    vector<BPB*> 
 
    void parse(uint8_t* TempPointer)
    {
-        BPB *MyBPB;
+        BPB *MyBPB=new BPB;
         for(int i=3; i<11; i++)
         {
-            MyBPB->name.push_back(BPB[i]);
+            MyBPB->name.push_back(TempPointer[i]);
         }
-
+        cerr << "OEM Name: " << MyBPB->name << endl;
         MyBPB->BytePerSector = TempPointer[11] + (((uint16_t)TempPointer[11+1])<<8);
         cerr << "BytePerSector: " << MyBPB->BytePerSector << endl;
         MyBPB->SectorsPerCluster = TempPointer[13];
@@ -143,6 +151,30 @@ extern "C"
         cerr << "HiddenSectorCount: " << MyBPB->HiddenSectorCount << endl;
         MyBPB->SectorCount32 = TempPointer[32] + (((uint32_t)TempPointer[32+1])<<8) + (((uint32_t)TempPointer[32+2])<<16) + (((uint32_t)TempPointer[32+3])<<24);
         cerr << "SectorCount32: " << MyBPB->SectorCount32 << endl;
+        MyBPB->DriveNumer = TempPointer[36];
+        cerr << "DriveNumer: " << MyBPB->DriveNumer << endl;
+        MyBPB->BootSignature = TempPointer[38];
+        cerr << "BootSignature: " << MyBPB->BootSignature << endl;
+        MyBPB->VolumeID = TempPointer[39] + (((uint32_t)TempPointer[39+1])<<8) + (((uint32_t)TempPointer[39+2])<<16) + (((uint32_t)TempPointer[39+3])<<24);
+        cerr << "VolumeID: " << hex<< MyBPB->VolumeID << dec<< endl;
+        for(int i = 43; i<53; i++)
+        {
+            MyBPB->VolumeLabel.push_back(TempPointer[i]);
+        }
+        cerr << "VolumeLabel: " << "\"" << MyBPB->VolumeLabel << "\"" << endl;
+        for(int i = 54; i<61; i++)
+        {
+            MyBPB->FileSystemType.push_back(TempPointer[i]);
+        }
+        cerr << "FileSystemType: " << "\"" << MyBPB->FileSystemType << "\"" << endl;
+        MyBPB->RootDirectorySectors = (MyBPB->RootEntry * 32) / 512;
+        cerr << "RootDirectorySectors: " << MyBPB->RootDirectorySectors << endl;
+        MyBPB->FirstRootSector = MyBPB->ReservedSectors + MyBPB->FATCount * MyBPB->FATSize16;
+        cerr << "FirstRootSector: " << MyBPB->FirstRootSector << endl;
+        MyBPB->FirstDataSector = MyBPB->FirstRootSector + MyBPB->RootDirectorySectors;
+        cerr << "FirstDataSector: " << MyBPB->FirstDataSector << endl;
+        MyBPB->ClusterCount = (MyBPB->SectorCount32 - MyBPB->FirstDataSector) / MyBPB->SectorsPerCluster;
+        cerr << "ClusterCount: " << MyBPB->ClusterCount << endl;
 
    }
 
