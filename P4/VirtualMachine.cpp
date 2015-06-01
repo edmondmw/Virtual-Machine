@@ -190,7 +190,7 @@ extern "C"
         //cerr << "FirstDataSector: " << MyBPB->FirstDataSector << endl;
         MyBPB->ClusterCount = (MyBPB->SectorCount32 - MyBPB->FirstDataSector) / MyBPB->SectorsPerCluster;
         //cerr << "ClusterCount: " << MyBPB->ClusterCount << endl;
-        int FirstFatSector = MyBPB->ReservedSectors*512;
+        int FirstFatSector = MyBPB->ReservedSectors*(int)MACHINE_MEMORY_LIMIT;
         //gets where the first fat begins
 //parse fat
         void *TempOffset=NULL;//for offset for memory pool allocation
@@ -202,7 +202,7 @@ extern "C"
             //cerr << "2" << endl;
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
             //iterates though the each 512 bytes from the first fatsector
-            MachineFileSeek(GlobalValue, FirstFatSector+(i*512), 0, FileCallback, ThreadIDVector[CurrentThreadIndex]);  
+            MachineFileSeek(GlobalValue, FirstFatSector+(i*(int)MACHINE_MEMORY_LIMIT), 0, FileCallback, ThreadIDVector[CurrentThreadIndex]);  
             //cerr << "3" << endl;
             scheduler();
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
@@ -215,7 +215,7 @@ extern "C"
             //gets info from tempoffset and sets it to uint16 to store in vecotr
             FATtemp=(uint16_t*)TempOffset;
             //cerr << "5" << endl;
-            while(j < 256)   //read in half of the fat
+            while(j < (int)MACHINE_MEMORY_LIMIT/2)   //read in half of the fat
             {
                 //2 sectors per cluster
                 //temp=TempPointer[j];// + (((uint16_t)TempPointer[k+1])<<8);
@@ -247,7 +247,7 @@ extern "C"
             //cerr << "2" << endl;
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
             //iterates though each 512 bytes from the first root sector location
-            MachineFileSeek(GlobalValue, (MyBPB->FirstRootSector*512)+(i*512), 0, FileCallback, ThreadIDVector[CurrentThreadIndex]);  
+            MachineFileSeek(GlobalValue, (MyBPB->FirstRootSector*(int)MACHINE_MEMORY_LIMIT)+(i*(int)MACHINE_MEMORY_LIMIT), 0, FileCallback, ThreadIDVector[CurrentThreadIndex]);  
             //cerr << "3" << endl;
             scheduler();
             ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
@@ -275,7 +275,7 @@ extern "C"
             }    
         */
         //cerr << endl;
-//reading root
+//parses directory name
             //cerr << "1" << endl;
             for(int k=0; k<16; k++)
             {
@@ -286,7 +286,7 @@ extern "C"
 
                 //    cerr << "3" << endl;
                     //cerr << RootTemp[11+(k*32)] << endl;
-                    int index=0;
+                    int CurrentLocation=0;
                     for(int j=0; j<11 ; j++)
                     {
                     //    cerr << "!" << endl;
@@ -294,61 +294,63 @@ extern "C"
                         if(j<8 && RootTemp[j+(k*32)] != ' ')
                         {
                       //      cerr <<"@" << endl;
-                            MyRootEntry->DirectoryEntry.DShortFileName[index] = RootTemp[j+(k*32)];
-                            index++;
-                            //cerr << hex << MyRootEntry->DirectoryEntry.DShortFileName[index] << dec << endl;   
+                            MyRootEntry->DirectoryEntry.DShortFileName[CurrentLocation] = RootTemp[j+(k*32)];
+                            CurrentLocation++;
+                            //cerr << hex << MyRootEntry->DirectoryEntry.DShortFileName[currentlocation] << dec << endl;   
                         }
                         //max number of characters it can take in and sets the "."
                         if(j==8 && RootTemp[j+(k*32)] !=' ')
                         {
                       //      cerr << "#" << endl;
-                            //add index = to .
-                            MyRootEntry->DirectoryEntry.DShortFileName[index]='.';
-                            index++;
+                            //add currentlocation = to .
+                            MyRootEntry->DirectoryEntry.DShortFileName[CurrentLocation]='.';
+                            CurrentLocation++;
 
                         }
                         //finishes the extention
                         if(j>=8 && RootTemp[j+(k*32)] !=' ')
                         {
                         //    cerr << "$" << endl;
-                            MyRootEntry->DirectoryEntry.DShortFileName[index] = RootTemp[j+(k*32)];
-                            //cerr << hex << MyRootEntry->DirectoryEntry.DShortFileName[index] << dec;
+                            MyRootEntry->DirectoryEntry.DShortFileName[CurrentLocation] = RootTemp[j+(k*32)];
+                            //cerr << hex << MyRootEntry->DirectoryEntry.DShortFileName[currentlocation] << dec;
 
-                            index++;
+                            CurrentLocation++;
                         }
 
-                        MyRootEntry->DirectoryEntry.DSize= RootTemp[28+(k*32)] + (((uint8_t)RootTemp[28+1+(k*32)])<<8) + (((uint8_t)RootTemp[28+2+(k*32)])<<16) + (((uint8_t)RootTemp[28+3+(k*32)])<<24);
-                        MyRootEntry->DirectoryEntry.DAttributes = RootTemp[11+(k*32)];
-                        uint16_t CreateDate = RootTemp[16+(k*32)] + (((uint16_t)RootTemp[16+1+(k*32)])<<8);
-                        uint16_t CreateTime = RootTemp[14+(k*32)] + (((uint16_t)RootTemp[14+1+(k*32)])<<8); 
-                        uint16_t AccessDate = RootTemp[18+(k*32)] + (((uint16_t)RootTemp[18+1+(k*32)])<<8);
-                        uint16_t ModifyDate = RootTemp[24+(k*32)] + (((uint16_t)RootTemp[24+1+(k*32)])<<8);
-                        uint16_t ModifyTime = RootTemp[22+(k*32)] + (((uint16_t)RootTemp[22+1+(k*32)])<<8);
-                   //DCREATE
-                        MyRootEntry->DirectoryEntry.DCreate.DYear = (CreateDate >> 9) + 1980;
-                        MyRootEntry->DirectoryEntry.DCreate.DMonth = (CreateDate >> 5) & 0xF;
-                        MyRootEntry->DirectoryEntry.DCreate.DDay = (CreateDate & 0xF);
-                        MyRootEntry->DirectoryEntry.DCreate.DHour = (CreateTime >> 11);
-                        MyRootEntry->DirectoryEntry.DCreate.DMinute = (CreateTime >> 5) & 0x3F;
-                        MyRootEntry->DirectoryEntry.DCreate.DSecond = (CreateTime & 0x1F) << 1;
-                    //DACCESS
-                        MyRootEntry->DirectoryEntry.DAccess.DYear = (AccessDate >> 9) + 1980;
-                        MyRootEntry->DirectoryEntry.DAccess.DMonth = (AccessDate >> 5) & 0xF;
-                        MyRootEntry->DirectoryEntry.DAccess.DDay = (AccessDate & 0xF);
-                        //MyRootEntry->DirectoryEntry.DAccess.DHour = (CreateTime >> 11);
-                        //MyRootEntry->DirectoryEntry.DAccess.DMinute = (CreateTime >> 5) & 0x3F;
-                        //MyRootEntry->DirectoryEntry.DAccess.DSecond = (CreateTime & 0x1F) << 1;
-                    //DMODIFY
-                        MyRootEntry->DirectoryEntry.DModify.DYear = (ModifyDate >> 9) + 1980;
-                        MyRootEntry->DirectoryEntry.DModify.DMonth = (ModifyDate>> 5) & 0xF;
-                        MyRootEntry->DirectoryEntry.DModify.DDay = (ModifyDate & 0xF);
-                        MyRootEntry->DirectoryEntry.DModify.DHour = (ModifyTime >> 11);
-                        MyRootEntry->DirectoryEntry.DModify.DMinute = (ModifyTime>> 5) & 0x3F;
-                        MyRootEntry->DirectoryEntry.DModify.DSecond = (ModifyTime & 0x1F) << 1;
 
-                        RootVector.push_back(MyRootEntry);
-                        //cerr << hex << RootEntryVector[0]->DirectoryEntry.DShortFileName << " " << dec;                        
-                    }                        
+                        //cerr << hex << RootEntryVector[0]->DirectoryEntry.DShortFileName << " " << dec;    
+
+                    }   
+                    MyRootEntry->DirectoryEntry.DSize= RootTemp[28+(k*32)] + (((uint8_t)RootTemp[28+1+(k*32)])<<8) + (((uint8_t)RootTemp[28+2+(k*32)])<<16) + (((uint8_t)RootTemp[28+3+(k*32)])<<24);
+                    MyRootEntry->DirectoryEntry.DAttributes = RootTemp[11+(k*32)];
+                    uint16_t CreateDate = RootTemp[16+(k*32)] + (((uint16_t)RootTemp[16+1+(k*32)])<<8);
+                    uint16_t CreateTime = RootTemp[14+(k*32)] + (((uint16_t)RootTemp[14+1+(k*32)])<<8); 
+                    uint16_t AccessDate = RootTemp[18+(k*32)] + (((uint16_t)RootTemp[18+1+(k*32)])<<8);
+                    uint16_t ModifyDate = RootTemp[24+(k*32)] + (((uint16_t)RootTemp[24+1+(k*32)])<<8);
+                    uint16_t ModifyTime = RootTemp[22+(k*32)] + (((uint16_t)RootTemp[22+1+(k*32)])<<8);
+               //DCREATE
+                    MyRootEntry->DirectoryEntry.DCreate.DYear = (CreateDate >> 9) + 1980;
+                    MyRootEntry->DirectoryEntry.DCreate.DMonth = (CreateDate >> 5) & 0xF;
+                    MyRootEntry->DirectoryEntry.DCreate.DDay = (CreateDate & 0xF);
+                    MyRootEntry->DirectoryEntry.DCreate.DHour = (CreateTime >> 11);
+                    MyRootEntry->DirectoryEntry.DCreate.DMinute = (CreateTime >> 5) & 0x3F;
+                    MyRootEntry->DirectoryEntry.DCreate.DSecond = (CreateTime & 0x1F) << 1;
+                //DACCESS
+                    MyRootEntry->DirectoryEntry.DAccess.DYear = (AccessDate >> 9) + 1980;
+                    MyRootEntry->DirectoryEntry.DAccess.DMonth = (AccessDate >> 5) & 0xF;
+                    MyRootEntry->DirectoryEntry.DAccess.DDay = (AccessDate & 0xF);
+                    //MyRootEntry->DirectoryEntry.DAccess.DHour = (CreateTime >> 11);
+                    //MyRootEntry->DirectoryEntry.DAccess.DMinute = (CreateTime >> 5) & 0x3F;
+                    //MyRootEntry->DirectoryEntry.DAccess.DSecond = (CreateTime & 0x1F) << 1;
+                //DMODIFY
+                    MyRootEntry->DirectoryEntry.DModify.DYear = (ModifyDate >> 9) + 1980;
+                    MyRootEntry->DirectoryEntry.DModify.DMonth = (ModifyDate>> 5) & 0xF;
+                    MyRootEntry->DirectoryEntry.DModify.DDay = (ModifyDate & 0xF);
+                    MyRootEntry->DirectoryEntry.DModify.DHour = (ModifyTime >> 11);
+                    MyRootEntry->DirectoryEntry.DModify.DMinute = (ModifyTime>> 5) & 0x3F;
+                    MyRootEntry->DirectoryEntry.DModify.DSecond = (ModifyTime & 0x1F) << 1;
+
+                    RootVector.push_back(MyRootEntry);                     
                 }
 
             }
