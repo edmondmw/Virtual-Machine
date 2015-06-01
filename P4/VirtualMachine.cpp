@@ -75,7 +75,7 @@ extern "C"
     int GlobalValue;    //filecallback result
 
     vector<uint16_t> FATVector;
-    vector<uint8_t> RootVector;
+    //vector<uint8_t> RootVector;
     vector<MemoryPool*> MemoryIDVector;
 	vector<mutex*> MutexIDVector;
     vector<TCB*> ThreadIDVector;
@@ -124,6 +124,14 @@ extern "C"
    {
         SVMDirectoryEntry DirectoryEntry;
    }RootName;
+
+   typedef struct 
+   {
+       int offset;
+   }Directory;
+
+    vector<Directory*> DirectoryVector;
+    vector<RootName*> RootVector;
 
    void parse(uint8_t* TempPointer)
    {
@@ -219,9 +227,8 @@ extern "C"
                 //cerr << hex <<FATtemp[j] << dec << " ";
                 j++;
                 //cerr << "7" << endl;
-                
-
             }    
+            VMMemoryPoolDeallocate(VM_MEMORY_POOL_ID_SHARED, (void*)TempOffset);
             
         }   
         //cerr << endl;
@@ -229,7 +236,8 @@ extern "C"
         //same as parsing fat cept use diff iteration values
         //cerr << "@" << endl;
         void* RootTempOffset= NULL;
-        uint8_t *RootTemp;
+        uint8_t *RootTemp = NULL;
+
         //cerr << "!" << endl;
         //iterate till end of root directory sector
         for(int i=0; i<MyBPB->RootDirectorySectors; i++)
@@ -246,11 +254,12 @@ extern "C"
             MachineFileRead(GlobalValue, RootTempOffset, MACHINE_MEMORY_LIMIT, FileCallback, ThreadIDVector[CurrentThreadIndex]);
             //cerr << "4" << endl;
             scheduler();
-            int j = 0;
+      //      int j = 0;
             //temp = *TempOffset;
             //stores rootTemp to result get from machine file read
             RootTemp=(uint8_t*)RootTempOffset;
             //cerr << "5" << endl;
+            /*
             while(j < (int)MACHINE_MEMORY_LIMIT)   
             {
                 //2 sectors per cluster
@@ -264,47 +273,88 @@ extern "C"
                 j++;
                 //cerr << "7" << endl;
             }    
-        }   
+        */
         //cerr << endl;
 //reading root
-        uint8_t* blah = (uint8_t*)RootTemp;
-        RootTemp = NULL;
-        RootName *MyRootEntry=new RootName;
-        cerr << "1" << endl;
-        for(int i=0; i<16; i++)
-        {
-            cerr << "2" << endl;
-            if(blah[11+(i*32)] != 15 && blah[(i*32)] != '\0')
+            //cerr << "1" << endl;
+            for(int k=0; k<16; k++)
             {
-                cerr << "3" << endl;
-                int index=0;
-                for(int j=0; j<11 ; j++)
+              //  cerr << "2" << endl;
+                if(RootTemp[11+(k*32)] != 15 && RootTemp[(k*32)] != '\0')
                 {
-                    cerr << "!" << endl;
-                    if(j<8 && blah[11+(i*32)] != ' ')
+                    RootName *MyRootEntry=new RootName;
+
+                //    cerr << "3" << endl;
+                    //cerr << RootTemp[11+(k*32)] << endl;
+                    int index=0;
+                    for(int j=0; j<11 ; j++)
                     {
-                        cerr <<"@" << endl;
-                        MyRootEntry->DirectoryEntry.DShortFileName[index] = blah[11+(i*32)];
-                        index++;
-                    }
-                    if(j==8)
-                    {
-                        cerr << "#" << endl;
-                        //add index = to .
-                        MyRootEntry->DirectoryEntry.DShortFileName[index]='.';
-                        index++;
-                    }
-                    if(j>8 && blah[11+(i*32)] !=' ')
-                    {
-                        cerr << "$" << endl;
-                        MyRootEntry->DirectoryEntry.DShortFileName[index] = blah[11+(i*32)];
-                        index++;
-                    }
-                }    
-                
+                    //    cerr << "!" << endl;
+                        //pushes in first 8 character that is not empty
+                        if(j<8 && RootTemp[j+(k*32)] != ' ')
+                        {
+                      //      cerr <<"@" << endl;
+                            MyRootEntry->DirectoryEntry.DShortFileName[index] = RootTemp[j+(k*32)];
+                            index++;
+                            //cerr << hex << MyRootEntry->DirectoryEntry.DShortFileName[index] << dec << endl;   
+                        }
+                        //max number of characters it can take in and sets the "."
+                        if(j==8 && RootTemp[j+(k*32)] !=' ')
+                        {
+                      //      cerr << "#" << endl;
+                            //add index = to .
+                            MyRootEntry->DirectoryEntry.DShortFileName[index]='.';
+                            index++;
+
+                        }
+                        //finishes the extention
+                        if(j>=8 && RootTemp[j+(k*32)] !=' ')
+                        {
+                        //    cerr << "$" << endl;
+                            MyRootEntry->DirectoryEntry.DShortFileName[index] = RootTemp[j+(k*32)];
+                            //cerr << hex << MyRootEntry->DirectoryEntry.DShortFileName[index] << dec;
+
+                            index++;
+                        }
+
+                        MyRootEntry->DirectoryEntry.DSize= RootTemp[28+(k*32)] + (((uint8_t)RootTemp[28+1+(k*32)])<<8) + (((uint8_t)RootTemp[28+2+(k*32)])<<16) + (((uint8_t)RootTemp[28+3+(k*32)])<<24);
+                        MyRootEntry->DirectoryEntry.DAttributes = RootTemp[11+(k*32)];
+                        uint16_t CreateDate = RootTemp[16+(k*32)] + (((uint16_t)RootTemp[16+1+(k*32)])<<8);
+                        uint16_t CreateTime = RootTemp[14+(k*32)] + (((uint16_t)RootTemp[14+1+(k*32)])<<8); 
+                        uint16_t AccessDate = RootTemp[18+(k*32)] + (((uint16_t)RootTemp[18+1+(k*32)])<<8);
+                        uint16_t ModifyDate = RootTemp[24+(k*32)] + (((uint16_t)RootTemp[24+1+(k*32)])<<8);
+                        uint16_t ModifyTime = RootTemp[22+(k*32)] + (((uint16_t)RootTemp[22+1+(k*32)])<<8);
+                   //DCREATE
+                        MyRootEntry->DirectoryEntry.DCreate.DYear = (CreateDate >> 9) + 1980;
+                        MyRootEntry->DirectoryEntry.DCreate.DMonth = (CreateDate >> 5) & 0xF;
+                        MyRootEntry->DirectoryEntry.DCreate.DDay = (CreateDate & 0xF);
+                        MyRootEntry->DirectoryEntry.DCreate.DHour = (CreateTime >> 11);
+                        MyRootEntry->DirectoryEntry.DCreate.DMinute = (CreateTime >> 5) & 0x3F;
+                        MyRootEntry->DirectoryEntry.DCreate.DSecond = (CreateTime & 0x1F) << 1;
+                    //DACCESS
+                        MyRootEntry->DirectoryEntry.DAccess.DYear = (AccessDate >> 9) + 1980;
+                        MyRootEntry->DirectoryEntry.DAccess.DMonth = (AccessDate >> 5) & 0xF;
+                        MyRootEntry->DirectoryEntry.DAccess.DDay = (AccessDate & 0xF);
+                        //MyRootEntry->DirectoryEntry.DAccess.DHour = (CreateTime >> 11);
+                        //MyRootEntry->DirectoryEntry.DAccess.DMinute = (CreateTime >> 5) & 0x3F;
+                        //MyRootEntry->DirectoryEntry.DAccess.DSecond = (CreateTime & 0x1F) << 1;
+                    //DMODIFY
+                        MyRootEntry->DirectoryEntry.DModify.DYear = (ModifyDate >> 9) + 1980;
+                        MyRootEntry->DirectoryEntry.DModify.DMonth = (ModifyDate>> 5) & 0xF;
+                        MyRootEntry->DirectoryEntry.DModify.DDay = (ModifyDate & 0xF);
+                        MyRootEntry->DirectoryEntry.DModify.DHour = (ModifyTime >> 11);
+                        MyRootEntry->DirectoryEntry.DModify.DMinute = (ModifyTime>> 5) & 0x3F;
+                        MyRootEntry->DirectoryEntry.DModify.DSecond = (ModifyTime & 0x1F) << 1;
+
+                        RootVector.push_back(MyRootEntry);
+                        //cerr << hex << RootEntryVector[0]->DirectoryEntry.DShortFileName << " " << dec;                        
+                    }                        
+                }
+
             }
+            VMMemoryPoolDeallocate(VM_MEMORY_POOL_ID_SHARED, (void*)RootTempOffset);
         }
-        cerr << "4" << endl;
+
    }
 
     void IdleEntry(void *param)
@@ -313,7 +363,7 @@ extern "C"
         MachineEnableSignals();
         while(true)
         {
-           //cerr << "5" << endl;
+           //cerr << "idle" << endl;
         }
     }
 
@@ -812,8 +862,8 @@ extern "C"
         MachineContextCreate(&(ThreadIDVector[1]->context), IdleEntry , NULL,ThreadIDVector[1]->BaseStack, ThreadIDVector[1]->MemorySize);
 
 //<<<<<<< HEAD
-        TMachineSignalState OldState;
-        MachineSuspendSignals(&OldState);
+//        TMachineSignalState OldState;
+//        MachineSuspendSignals(&OldState);
         ThreadIDVector[CurrentThreadIndex]->ThreadState=VM_THREAD_STATE_WAITING;
 
         uint8_t *TempPointer = NULL;
@@ -826,7 +876,7 @@ extern "C"
 //<<<<<<< HEAD
         MachineFileRead(GlobalValue, TempPointer, MACHINE_MEMORY_LIMIT, FileCallback, ThreadIDVector[CurrentThreadIndex]);
         scheduler();
-        MachineResumeSignals(&OldState);
+  //      MachineResumeSignals(&OldState);
        /* for(int i=0; i<512; i++)
         {
             cerr<<TempPointer[i]<< " ";
@@ -1447,42 +1497,128 @@ extern "C"
         return VM_STATUS_SUCCESS;
     }
 
-/*
+
     TVMStatus VMDirectoryOpen(const char *dirname, int *dirdescriptor)
     {
-        MachineSuspendSignals OldState;
-        MachineResumeSignals(&OldState);
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
         if(dirname == NULL || dirdescriptor == NULL)
         {
             MachineResumeSignals(&OldState);
             return VM_STATUS_ERROR_INVALID_PARAMETER;
         }
 
-        if(ThreadIDVector[CurrentThreadIndex]-> < 0)
+        if(DirectoryVector.size() < 0)
         {
             MachineResumeSignals(&OldState);
             return VM_STATUS_FAILURE;
         }
 
-        MachineFileOpen(dirname, O_RDWR, mode, FileCallback, ThreadIDVector[CurrentThreadIndex]);
-
-        ThreadIDVector[CurrentThreadIndex]->ThreadState = VM_THREAD_STATE_WAITING;
+        Directory *MyDirectory = new Directory;
         
-        scheduler();
-
-        *dirdescriptor = ThreadIDVector[CurrentThreadIndex]->;
+        MyDirectory->offset = 0;
+        *dirdescriptor = DirectoryVector.size()+1234321;
+        DirectoryVector.push_back(MyDirectory);
         MachineResumeSignals(&OldState);
         return VM_STATUS_SUCCESS;
     }
     TVMStatus VMDirectoryClose(int dirdescriptor)
     {
-        MachineSuspendSignals OldState;
-        MachineResumeSignals(&OldState);
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+        
 
-        if(ThreadIDVector[CurrentThreadIndex]->< 0)
+        if(DirectoryVector.size() < 0)
         {
             MachineResumeSignals(&OldState);
             return VM_STATUS_FAILURE;
         }
-    }*/
+        else
+        {
+            DirectoryVector.erase(DirectoryVector.begin()+dirdescriptor);
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_SUCCESS;
+        }         
+    }
+
+    TVMStatus VMDirectoryRead(int dirdescriptor, SVMDirectoryEntryRef dirent)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
+        if(dirent == NULL)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+        if(RootVector.size() > DirectoryVector[dirdescriptor-1234321]->offset)
+        {
+            DirectoryVector[dirdescriptor-1234321]->offset++;
+            *dirent = RootVector[DirectoryVector[dirdescriptor-1234321]->offset]->DirectoryEntry;
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_SUCCESS;
+        }
+    }
+
+    TVMStatus VMDirectoryCurrent(char *abspath)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
+        if(abspath==NULL)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;
+    }
+
+    TVMStatus VMDirectoryChange(const char *path)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
+        if(path == NULL)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;
+    }
+
+    TVMStatus VMDirectoryUnlink(const char *path)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
+        if(path == NULL)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;
+    }
+
+    TVMStatus VMDirectoryCreate(const char *dirname)
+    {
+        TMachineSignalState OldState;
+        MachineSuspendSignals(&OldState);
+
+        if(dirname == NULL)
+        {
+            MachineResumeSignals(&OldState);
+            return VM_STATUS_ERROR_INVALID_PARAMETER;
+        }
+
+        MachineResumeSignals(&OldState);
+        return VM_STATUS_SUCCESS;   
+    }
+
 }
+
